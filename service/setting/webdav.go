@@ -20,6 +20,7 @@ type WebDAVAccountService struct {
 type WebDAVAccountCreateService struct {
 	Path string `json:"path" binding:"required,min=1,max=65535"`
 	Name string `json:"name" binding:"required,min=1,max=255"`
+	Password string `json:"password"`
 }
 
 // WebDAVMountCreateService WebDAV 挂载创建服务
@@ -30,9 +31,20 @@ type WebDAVMountCreateService struct {
 
 // Create 创建WebDAV账户
 func (service *WebDAVAccountCreateService) Create(c *gin.Context, user *model.User) serializer.Response {
+        var webdavps string
+        webdavps = service.Password
+	if webdavps == ""  {
+	      webdavps = util.RandStringRunes(16)
+        } 
+	if len(webdavps) < 4  {
+	      webdavps = util.RandStringRunes(16)
+        } 
+	if len(webdavps) > 16  {
+	      webdavps = util.RandStringRunes(16)
+        }
 	account := model.Webdav{
 		Name:     service.Name,
-		Password: util.RandStringRunes(32),
+		Password: webdavps,
 		UserID:   user.ID,
 		Root:     service.Path,
 	}
@@ -44,7 +56,7 @@ func (service *WebDAVAccountCreateService) Create(c *gin.Context, user *model.Us
 	return serializer.Response{
 		Data: map[string]interface{}{
 			"id":         account.ID,
-			"password":   account.Password,
+			"password":   webdavps,
 			"created_at": account.CreatedAt,
 		},
 	}
