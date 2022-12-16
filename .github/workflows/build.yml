@@ -1,38 +1,34 @@
-name: build
+name: Build
 
 on: workflow_dispatch
 
 jobs:
   build:
-    strategy:
-      matrix:
-        platform: [ubuntu-20.04]
-        go-version: [1.18]
     name: Build
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-20.04
     steps:
-      - name: Setup Go
+      - name: Set up Go 1.18
         uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: "1.18"
+        id: go
 
-      - name: Checkout
+      - name: Check out code into the Go module directory
         uses: actions/checkout@v3
         with:
           clean: false
           submodules: "recursive"
       - run: |
           git fetch --prune --unshallow --tags
-          
-      - name: Install dependencies
+
+      - name: Get dependencies and build
         run: |
-          sudo apt update
-	      docker pull crazymax/xgo:latest
+          sudo apt-get update
+          docker pull crazymax/xgo:latest
           go install github.com/crazy-max/xgo@latest
           sudo apt install upx
-      - name: Build
-        run: |
-          bash build.sh -r b
+          chmod +x ./build.sh
+          ./build.sh -r b
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
