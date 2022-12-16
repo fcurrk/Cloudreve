@@ -24,13 +24,13 @@ jobs:
       - name: Get dependencies and build
         run: |
           sudo apt-get update
-          docker pull crazymax/xgo:latest
-          go install github.com/crazy-max/xgo@latest
-          sudo apt install upx
+          sudo apt-get -y install gcc-mingw-w64-x86-64
+          sudo apt-get -y install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+          sudo apt-get -y install gcc-aarch64-linux-gnu libc6-dev-arm64-cross
           chmod +x ./build.sh
           ./build.sh -r b
 
-      - name: Upload artifact
+      - name: Upload binary files
         uses: actions/upload-artifact@v3
         with:
           name: cloudreve
