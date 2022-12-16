@@ -5,7 +5,8 @@ REPO=$(
   pwd
 )
 COMMIT_SHA=$(git rev-parse --short HEAD)
-VERSION=$(git describe --tags)
+#VERSION=$(git describe --tags)
+VERSION="3.6.0.2"
 ASSETS="false"
 BINARY="false"
 RELEASE="false"
