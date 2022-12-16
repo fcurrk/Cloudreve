@@ -76,7 +76,7 @@ _build() {
     rm -f "release/cloudreve"
   fi
   mkdir -p "build"
-  mv cloudreve_* build
+  mv release/cloudreve* build
   cd build
   find . -type f -print0 | xargs -0 md5sum >md5.txt
   cat md5.txt
