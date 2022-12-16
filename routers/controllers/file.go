@@ -79,8 +79,8 @@ func AnonymousGetContent(c *gin.Context) {
 	}
 }
 
-// AnonymousPermLink 文件签名后的永久链接
-func AnonymousPermLink(c *gin.Context) {
+// AnonymousPermLink Deprecated 文件签名后的永久链接
+func AnonymousPermLinkDeprecated(c *gin.Context) {
 	// 创建上下文
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -100,6 +100,39 @@ func AnonymousPermLink(c *gin.Context) {
 	} else {
 		c.JSON(200, ErrorResponse(err))
 	}
+}
+
+// AnonymousPermLink 文件中转后的永久直链接
+func AnonymousPermLink(c *gin.Context) {
+	// 创建上下文
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sourceLinkRaw, ok := c.Get("source_link")
+	if !ok {
+		c.JSON(200, serializer.Err(serializer.CodeFileNotFound, "", nil))
+		return
+	}
+
+	sourceLink := sourceLinkRaw.(*model.SourceLink)
+
+	service := &explorer.FileAnonymousGetService{
+		ID:   sourceLink.FileID,
+		Name: sourceLink.File.Name,
+	}
+
+	res := service.Source(ctx, c)
+	// 是否需要重定向
+	if res.Code == -302 {
+		c.Redirect(302, res.Data.(string))
+		return
+	}
+
+	// 是否有错误发生
+	if res.Code != 0 {
+		c.JSON(200, res)
+	}
+
 }
 
 func GetSource(c *gin.Context) {
@@ -132,14 +165,14 @@ func Thumb(c *gin.Context) {
 	// 获取文件ID
 	fileID, ok := c.Get("object_id")
 	if !ok {
-		c.JSON(200, serializer.ParamErr("文件不存在", err))
+		c.JSON(200, serializer.Err(serializer.CodeFileNotFound, "", err))
 		return
 	}
 
 	// 获取缩略图
 	resp, err := fs.GetThumb(ctx, fileID.(uint))
 	if err != nil {
-		c.JSON(200, serializer.Err(serializer.CodeNotSet, "无法获取缩略图", err))
+		c.JSON(200, serializer.Err(serializer.CodeNotSet, "Failed to get thumbnail", err))
 		return
 	}
 

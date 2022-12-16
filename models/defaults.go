@@ -9,12 +9,11 @@ import (
 var defaultSettings = []Setting{
 	{Name: "siteURL", Value: `http://localhost`, Type: "basic"},
 	{Name: "siteName", Value: `Cloudreve`, Type: "basic"},
-	{Name: "siteICPId", Value: ``, Type: "basic"},
 	{Name: "register_enabled", Value: `1`, Type: "register"},
 	{Name: "default_group", Value: `2`, Type: "register"},
-	{Name: "siteKeywords", Value: `网盘，网盘`, Type: "basic"},
+	{Name: "siteKeywords", Value: `Cloudreve, cloud storage`, Type: "basic"},
 	{Name: "siteDes", Value: `Cloudreve`, Type: "basic"},
-	{Name: "siteTitle", Value: `平步云端`, Type: "basic"},
+	{Name: "siteTitle", Value: `Inclusive cloud storage for everyone`, Type: "basic"},
 	{Name: "siteScript", Value: ``, Type: "basic"},
 	{Name: "siteID", Value: uuid.Must(uuid.NewV4()).String(), Type: "basic"},
 	{Name: "fromName", Value: `Cloudreve`, Type: "mail"},
@@ -114,4 +113,6 @@ Neue',Helvetica,Arial,sans-serif; box-sizing: border-box; font-size: 14px; verti
 	{Name: "pwa_theme_color", Value: "#000000", Type: "pwa"},
 	{Name: "pwa_background_color", Value: "#ffffff", Type: "pwa"},
 	{Name: "office_preview_service", Value: "https://view.officeapps.live.com/op/view.aspx?src={$src}", Type: "preview"},
+	{Name: "show_app_promotion", Value: "1", Type: "mobile"},
+	{Name: "public_resource_maxage", Value: "86400", Type: "timeout"},
 }

@@ -8,7 +8,6 @@ import (
 // SiteConfig 站点全局设置序列
 type SiteConfig struct {
 	SiteName             string `json:"title"`
-	SiteICPId            string `json:"siteICPId"`
 	LoginCaptcha         bool   `json:"loginCaptcha"`
 	RegCaptcha           bool   `json:"regCaptcha"`
 	ForgetCaptcha        bool   `json:"forgetCaptcha"`
@@ -23,6 +22,7 @@ type SiteConfig struct {
 	CaptchaType          string `json:"captcha_type"`
 	TCaptchaCaptchaAppId string `json:"tcaptcha_captcha_app_id"`
 	RegisterEnabled      bool   `json:"registerEnabled"`
+	AppPromotion         bool   `json:"app_promotion"`
 }
 
 type task struct {
@@ -70,7 +70,6 @@ func BuildSiteConfig(settings map[string]string, user *model.User) Response {
 	res := Response{
 		Data: SiteConfig{
 			SiteName:             checkSettingValue(settings, "siteName"),
-			SiteICPId:            checkSettingValue(settings, "siteICPId"),
 			LoginCaptcha:         model.IsTrueVal(checkSettingValue(settings, "login_captcha")),
 			RegCaptcha:           model.IsTrueVal(checkSettingValue(settings, "reg_captcha")),
 			ForgetCaptcha:        model.IsTrueVal(checkSettingValue(settings, "forget_captcha")),
@@ -85,6 +84,7 @@ func BuildSiteConfig(settings map[string]string, user *model.User) Response {
 			CaptchaType:          checkSettingValue(settings, "captcha_type"),
 			TCaptchaCaptchaAppId: checkSettingValue(settings, "captcha_TCaptcha_CaptchaAppId"),
 			RegisterEnabled:      model.IsTrueVal(checkSettingValue(settings, "register_enabled")),
+			AppPromotion:         model.IsTrueVal(checkSettingValue(settings, "show_app_promotion")),
 		}}
 	return res
 }
