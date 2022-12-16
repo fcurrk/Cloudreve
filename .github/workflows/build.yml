@@ -1,30 +1,32 @@
-name: Build
+name: build
 
 on: workflow_dispatch
 
 jobs:
   build:
+    strategy:
+      matrix:
+        platform: [ubuntu-20.04]
+        go-version: [1.18]
     name: Build
-    runs-on: ubuntu-20.04
+    runs-on: ${{ matrix.platform }}
     steps:
-      - name: Set up Go 1.18
+      - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.18"
-        id: go
+          go-version: ${{ matrix.go-version }}
 
       - name: Checkout
         uses: actions/checkout@v3
 
       - name: Install dependencies
         run: |
-	  docker pull crazymax/xgo:latest
+          docker pull crazymax/xgo:latest
           go install github.com/crazy-max/xgo@latest
           sudo apt install upx
 
       - name: Build
         run: |
-          chmod +x ./build.sh
           bash build.sh -r b
 
       - name: Upload artifact
