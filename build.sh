@@ -6,7 +6,7 @@ REPO=$(
 )
 COMMIT_SHA=$(git rev-parse --short HEAD)
 #VERSION=$(git describe --tags)
-VERSION="3.6.0.2"
+VERSION="3.6.0.3"
 ASSETS="false"
 BINARY="false"
 RELEASE="false"
