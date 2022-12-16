@@ -1,5 +1,5 @@
 #!/bin/bash
-
+appName="cloudreve"
 REPO=$(
   cd $(dirname $0)
   pwd
@@ -10,6 +10,12 @@ VERSION="3.6.0.3"
 ASSETS="false"
 BINARY="false"
 RELEASE="false"
+
+ldflags="\
+-w -s \
+-X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=$VERSION' \
+-X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit=$COMMIT_SHA' \
+"
 
 debugInfo() {
   echo "Repo:           $REPO"
@@ -42,7 +48,7 @@ buildBinary() {
   cd $REPO
 
   # same as assets, if this final output binary `cloudreve` name changed, please go and update the `Dockerfile`
-  go build -a -o cloudreve -ldflags " -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=$VERSION' -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit=$COMMIT_SHA'"
+  go build -a -o cloudreve -ldflags="$ldflags"
 }
 
 _build() {
@@ -64,7 +70,7 @@ _build() {
     out="release/cloudreve_${COMMIT_SHA}_${os}_${arch}"
   fi
 
-  go build -a -o "${out}" -ldflags " -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=$VERSION' -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit=$COMMIT_SHA'"
+  go build -a -o "${out}" -ldflags="$ldflags"
 
   if [ "$os" = "windows" ]; then
     mv $out release/cloudreve.exe
@@ -78,14 +84,36 @@ _build() {
 }
 
 release() {
-  cd $REPO
-  ## List of architectures and OS to test coss compilation.
-  SUPPORTED_OSARCH="linux/amd64/gcc linux/arm/arm-linux-gnueabihf-gcc windows/amd64/x86_64-w64-mingw32-gcc linux/arm64/aarch64-linux-gnu-gcc"
-
-  echo "Release builds for OS/Arch/CC: ${SUPPORTED_OSARCH}"
-  for each_osarch in ${SUPPORTED_OSARCH}; do
-    _build "${each_osarch}"
+  rm -rf .git/
+  mkdir -p "build"
+  muslflags="--extldflags '-static -fpic' $ldflags"
+  BASE="https://musl.nn.ci/"
+  FILES=(x86_64-linux-musl-cross aarch64-linux-musl-cross arm-linux-musleabihf-cross)
+  for i in "${FILES[@]}"; do
+    url="${BASE}${i}.tgz"
+    curl -L -o "${i}.tgz" "${url}"
+    sudo tar xf "${i}.tgz" --strip-components 1 -C /usr/local
   done
+  OS_ARCHES=(linux-musl-amd64 linux-musl-arm64 linux-musl-arm)
+  CGO_ARGS=(x86_64-linux-musl-gcc aarch64-linux-musl-gcc arm-linux-musleabihf-gcc)
+  for i in "${!OS_ARCHES[@]}"; do
+    os_arch=${OS_ARCHES[$i]}
+    cgo_cc=${CGO_ARGS[$i]}
+    echo building for ${os_arch}
+    export GOOS=${os_arch%%-*}
+    export GOARCH=${os_arch##*-}
+    export CC=${cgo_cc}
+    export CGO_ENABLED=1
+    go build -o ./build/$appName-$os_arch -ldflags="$muslflags" -tags=jsoniter .
+  done
+  xgo -targets=linux/amd64,windows/amd64,linux/arm64 -out "$appName" -ldflags="$ldflags" -tags=jsoniter .
+  # why? Because some target platforms seem to have issues with upx compression
+  upx -9 ./cloudreve-linux-amd64
+  upx -9 ./cloudreve-windows*
+  mv cloudreve-* build
+  cd build
+  find . -type f -print0 | xargs -0 md5sum >md5.txt
+  cat md5.txt
 }
 
 usage() {
