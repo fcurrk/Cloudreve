@@ -1,9 +1,9 @@
 #!/bin/bash
-appName="cloudreve"
 REPO=$(
   cd $(dirname $0)
   pwd
 )
+appName="cloudreve"
 COMMIT_SHA=$(git rev-parse --short HEAD)
 #VERSION=$(git describe --tags)
 VERSION="3.6.0.3"

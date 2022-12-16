@@ -18,10 +18,16 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          clean: false
+          submodules: "recursive"
+      - run: |
+          git fetch --prune --unshallow --tags
 
       - name: Install dependencies
         run: |
-          docker pull crazymax/xgo:latest
+          sudo apt update
+	  docker pull crazymax/xgo:latest
           go install github.com/crazy-max/xgo@latest
           sudo apt install upx
 
