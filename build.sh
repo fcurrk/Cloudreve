@@ -75,11 +75,6 @@ _build() {
     tar -zcvf "${out}.tar.gz" -C release cloudreve
     rm -f "release/cloudreve"
   fi
-  mkdir -p "build"
-  mv release/cloudreve* build
-  cd build
-  find . -type f -print0 | xargs -0 md5sum >md5.txt
-  cat md5.txt
 }
 
 release() {
@@ -91,6 +86,11 @@ release() {
   for each_osarch in ${SUPPORTED_OSARCH}; do
     _build "${each_osarch}"
   done
+  mkdir -p "build"
+  mv release/cloudreve* build
+  cd build
+  find . -type f -print0 | xargs -0 md5sum >md5.txt
+  cat md5.txt
 }
 
 usage() {
