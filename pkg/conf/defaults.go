@@ -18,9 +18,10 @@ var DatabaseConfig = &database{
 
 // SystemConfig 系统公用配置
 var SystemConfig = &system{
-	Debug:  false,
-	Mode:   "master",
-	Listen: ":5212",
+	Debug:       false,
+	Mode:        "master",
+	Listen:      ":5212",
+	ProxyHeader: "X-Forwarded-For",
 }
 
 // CORSConfig 跨域配置
@@ -30,6 +31,8 @@ var CORSConfig = &cors{
 	AllowHeaders:     []string{"Cookie", "X-Cr-Policy", "Authorization", "Content-Length", "Content-Type", "X-Cr-Path", "X-Cr-FileName"},
 	AllowCredentials: false,
 	ExposeHeaders:    nil,
+	SameSite:         "Default",
+	Secure:           false,
 }
 
 // SlaveConfig 从机配置
@@ -45,8 +48,7 @@ var SSLConfig = &ssl{
 }
 
 var UnixConfig = &unix{
-	Listen:      "",
-	ProxyHeader: "X-Forwarded-For",
+	Listen: "",
 }
 
 var OptionOverwrite = map[string]interface{}{}

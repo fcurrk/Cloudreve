@@ -41,7 +41,7 @@ type UploadPolicy struct {
 	Conditions []interface{} `json:"conditions"`
 }
 
-//MetaData 文件信息
+// MetaData 文件信息
 type MetaData struct {
 	Size uint64
 	Etag string
@@ -71,7 +71,7 @@ func (handler *Driver) InitS3Client() error {
 			Credentials:      credentials.NewStaticCredentials(handler.Policy.AccessKey, handler.Policy.SecretKey, ""),
 			Endpoint:         &handler.Policy.Server,
 			Region:           &handler.Policy.OptionsSerialized.Region,
-			S3ForcePathStyle: aws.Bool(true),
+			S3ForcePathStyle: &handler.Policy.OptionsSerialized.S3ForcePathStyle,
 		})
 
 		if err != nil {
@@ -289,16 +289,16 @@ func (handler *Driver) Source(
 		return "", err
 	}
 
+	contentDescription := aws.String("attachment; filename=\"" + url.PathEscape(fileName) + "\"")
+	if !isDownload {
+		contentDescription = nil
+	}
 	req, _ := handler.svc.GetObjectRequest(
 		&s3.GetObjectInput{
 			Bucket:                     &handler.Policy.BucketName,
 			Key:                        &path,
-			ResponseContentDisposition: aws.String("attachment; filename=\"" + url.PathEscape(fileName) + "\""),
+			ResponseContentDisposition: contentDescription,
 		})
-
-	if ttl == 0 {
-		ttl = 3600
-	}
 
 	signedURL, err := req.Presign(time.Duration(ttl) * time.Second)
 	if err != nil {
@@ -398,8 +398,8 @@ func (handler *Driver) Token(ctx context.Context, ttl int64, uploadSession *seri
 
 // Meta 获取文件信息
 func (handler *Driver) Meta(ctx context.Context, path string) (*MetaData, error) {
-	res, err := handler.svc.GetObject(
-		&s3.GetObjectInput{
+	res, err := handler.svc.HeadObject(
+		&s3.HeadObjectInput{
 			Bucket: &handler.Policy.BucketName,
 			Key:    &path,
 		})
@@ -407,7 +407,6 @@ func (handler *Driver) Meta(ctx context.Context, path string) (*MetaData, error)
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 
 	return &MetaData{
 		Size: uint64(*res.ContentLength),
