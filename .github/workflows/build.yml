@@ -36,4 +36,4 @@ jobs:
           name: cloudreve
           path: |
 	    dist/*.tar.gz
-	    dist/*.zip        
+	    dist/*.zip
