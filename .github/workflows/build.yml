@@ -34,4 +34,6 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: cloudreve
-          path: dist
+          path: |
+	    dist/*.tar.gz
+	    dist/*.zip        
