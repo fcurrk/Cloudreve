@@ -11,7 +11,7 @@ builds:
       - CGO_ENABLED=0
 
     ldflags:
-      - -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=3.7.0.1' -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit={{.ShortCommit}}'
+      - -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=3.7.0.2' -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit={{.ShortCommit}}'
 
     goos:
       - linux
