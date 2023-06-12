@@ -18,7 +18,7 @@ import (
 
 type Client interface {
 	// NewSession creates a new document session with access token.
-	NewSession(user *model.User, file *model.File, action ActonType) (*Session, error)
+	NewSession(uid uint, file *model.File, action ActonType) (*Session, error)
 	// AvailableExts returns a list of file extensions that are supported by WOPI.
 	AvailableExts() []string
 }
@@ -59,6 +59,7 @@ const (
 
 	wopiSrcPlaceholder    = "WOPI_SOURCE"
 	wopiSrcParamDefault   = "WOPISrc"
+	languageParamDefault  = "lang"
 	sessionExpiresPadding = 10
 	wopiHeaderPrefix      = "X-WOPI-"
 )
@@ -115,7 +116,7 @@ func NewClient(endpoint string, cache cache.Driver, http request.Client) (Client
 	}, nil
 }
 
-func (c *client) NewSession(user *model.User, file *model.File, action ActonType) (*Session, error) {
+func (c *client) NewSession(uid uint, file *model.File, action ActonType) (*Session, error) {
 	if err := c.checkDiscovery(); err != nil {
 		return nil, err
 	}
@@ -162,7 +163,7 @@ func (c *client) NewSession(user *model.User, file *model.File, action ActonType
 	session := &SessionCache{
 		AccessToken: fmt.Sprintf("%s.%s", sessionID, token),
 		FileID:      file.ID,
-		UserID:      user.ID,
+		UserID:      uid,
 		Action:      action,
 	}
 	err = c.cache.Set(SessionCachePrefix+sessionID.String(), *session, ttl)
@@ -213,6 +214,9 @@ func generateActionUrl(src string, fileSrc string) (*url.URL, error) {
 	if !srcReplaced {
 		queryReplaced.Set(wopiSrcParamDefault, fileSrc)
 	}
+
+	// LibreOffice require this flag to show correct language
+	queryReplaced.Set(languageParamDefault, "lng")
 
 	actionUrl.RawQuery = queryReplaced.Encode()
 	return actionUrl, nil

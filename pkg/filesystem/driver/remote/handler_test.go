@@ -3,12 +3,12 @@ package remote
 import (
 	"context"
 	"errors"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/mocks/remoteclientmock"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -50,7 +50,7 @@ func TestHandler_Source(t *testing.T) {
 			AuthInstance: auth.HMACAuth{},
 		}
 		ctx := context.Background()
-		res, err := handler.Source(ctx, "", url.URL{}, 0, true, 0)
+		res, err := handler.Source(ctx, "", 0, true, 0)
 		asserts.NoError(err)
 		asserts.NotEmpty(res)
 	}
@@ -65,7 +65,7 @@ func TestHandler_Source(t *testing.T) {
 			SourceName: "1.txt",
 		}
 		ctx := context.WithValue(context.Background(), fsctx.FileModelCtx, file)
-		res, err := handler.Source(ctx, "", url.URL{}, 10, true, 0)
+		res, err := handler.Source(ctx, "", 10, true, 0)
 		asserts.NoError(err)
 		asserts.Contains(res, "api/v3/slave/download/0")
 	}
@@ -80,7 +80,7 @@ func TestHandler_Source(t *testing.T) {
 			SourceName: "1.txt",
 		}
 		ctx := context.WithValue(context.Background(), fsctx.FileModelCtx, file)
-		res, err := handler.Source(ctx, "", url.URL{}, 10, true, 0)
+		res, err := handler.Source(ctx, "", 10, true, 0)
 		asserts.NoError(err)
 		asserts.Contains(res, "api/v3/slave/download/0")
 		asserts.Contains(res, "https://cqu.edu.cn")
@@ -96,7 +96,7 @@ func TestHandler_Source(t *testing.T) {
 			SourceName: "1.txt",
 		}
 		ctx := context.WithValue(context.Background(), fsctx.FileModelCtx, file)
-		res, err := handler.Source(ctx, "", url.URL{}, 10, true, 0)
+		res, err := handler.Source(ctx, "", 10, true, 0)
 		asserts.Error(err)
 		asserts.Empty(res)
 	}
@@ -111,7 +111,7 @@ func TestHandler_Source(t *testing.T) {
 			SourceName: "1.txt",
 		}
 		ctx := context.WithValue(context.Background(), fsctx.FileModelCtx, file)
-		res, err := handler.Source(ctx, "", url.URL{}, 10, false, 0)
+		res, err := handler.Source(ctx, "", 10, false, 0)
 		asserts.NoError(err)
 		asserts.Contains(res, "api/v3/slave/source/0")
 	}
@@ -373,14 +373,33 @@ func TestHandler_Thumb(t *testing.T) {
 			Type:      "remote",
 			SecretKey: "test",
 			Server:    "http://test.com",
+			OptionsSerialized: model.PolicyOption{
+				ThumbExts: []string{"txt"},
+			},
 		},
 		AuthInstance: auth.HMACAuth{},
 	}
+	file := &model.File{
+		Name:       "1.txt",
+		SourceName: "1.txt",
+	}
 	ctx := context.Background()
 	asserts.NoError(cache.Set("setting_preview_timeout", "60", 0))
-	resp, err := handler.Thumb(ctx, "/1.txt")
-	asserts.NoError(err)
-	asserts.True(resp.Redirect)
+
+	// no error
+	{
+		resp, err := handler.Thumb(ctx, file)
+		asserts.NoError(err)
+		asserts.True(resp.Redirect)
+	}
+
+	// ext not support
+	{
+		file.Name = "1.jpg"
+		resp, err := handler.Thumb(ctx, file)
+		asserts.ErrorIs(err, driver.ErrorThumbNotSupported)
+		asserts.Nil(resp)
+	}
 }
 
 func TestHandler_Token(t *testing.T) {

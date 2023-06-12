@@ -2,10 +2,16 @@ package driver
 
 import (
 	"context"
+	"fmt"
+	model "github.com/cloudreve/Cloudreve/v3/models"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/response"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
-	"net/url"
+)
+
+var (
+	ErrorThumbNotExist     = fmt.Errorf("thumb not exist")
+	ErrorThumbNotSupported = fmt.Errorf("thumb not supported")
 )
 
 // Handler 存储策略适配器
@@ -22,12 +28,15 @@ type Handler interface {
 
 	// 获取缩略图，可直接在ContentResponse中返回文件数据流，也可指
 	// 定为重定向
-	Thumb(ctx context.Context, path string) (*response.ContentResponse, error)
+	// 	如果缩略图不存在, 且需要 Cloudreve 代理生成并上传，应返回 ErrorThumbNotExist，生
+	//  成的缩略图文件存储规则与本机策略一致。
+	// 	如果不支持此文件的缩略图，并且不希望后续继续请求此缩略图，应返回 ErrorThumbNotSupported
+	Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error)
 
 	// 获取外链/下载地址，
 	// url - 站点本身地址,
 	// isDownload - 是否直接下载
-	Source(ctx context.Context, path string, url url.URL, ttl int64, isDownload bool, speed int) (string, error)
+	Source(ctx context.Context, path string, ttl int64, isDownload bool, speed int) (string, error)
 
 	// Token 获取有效期为ttl的上传凭证和签名
 	Token(ctx context.Context, ttl int64, uploadSession *serializer.UploadSession, file fsctx.FileHeader) (*serializer.UploadCredential, error)

@@ -26,6 +26,7 @@ type CreateUploadSessionService struct {
 	Name         string `json:"name" binding:"required"`
 	PolicyID     string `json:"policy_id" binding:"required"`
 	LastModified int64  `json:"last_modified"`
+	MimeType     string `json:"mime_type"`
 }
 
 // Create 创建新的上传会话
@@ -51,6 +52,7 @@ func (service *CreateUploadSessionService) Create(ctx context.Context, c *gin.Co
 		Name:        service.Name,
 		VirtualPath: service.Path,
 		File:        ioutil.NopCloser(strings.NewReader("")),
+		MimeType:    service.MimeType,
 	}
 	if service.LastModified > 0 {
 		lastModified := time.UnixMilli(service.LastModified)
@@ -174,7 +176,7 @@ func processChunkUpload(ctx context.Context, c *gin.Context, fs *filesystem.File
 	}
 
 	fileData := fsctx.FileStream{
-		MIMEType:     c.Request.Header.Get("Content-Type"),
+		MimeType:     c.Request.Header.Get("Content-Type"),
 		File:         c.Request.Body,
 		Size:         fileSize,
 		Name:         session.Name,
@@ -196,7 +198,6 @@ func processChunkUpload(ctx context.Context, c *gin.Context, fs *filesystem.File
 		fs.Use("AfterValidateFailed", filesystem.HookChunkUploadFailed)
 		if isLastChunk {
 			fs.Use("AfterUpload", filesystem.HookPopPlaceholderToFile(""))
-			fs.Use("AfterUpload", filesystem.HookGenerateThumb)
 			fs.Use("AfterUpload", filesystem.HookDeleteUploadSession(session.Key))
 		}
 	} else {

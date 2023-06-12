@@ -58,7 +58,6 @@ func TestFileSystem_AddFile(t *testing.T) {
 	asserts.NoError(err)
 	asserts.NoError(mock.ExpectationsWereMet())
 	asserts.Equal("/Uploads/1_sad.png", f.SourceName)
-	asserts.NotEmpty(f.PicInfo)
 
 	// 前置钩子执行失败
 	{
@@ -312,6 +311,19 @@ func TestFileSystem_deleteGroupedFile(t *testing.T) {
 		_, ok := cache.Get(UploadSessionCachePrefix + sessionID)
 		asserts.False(ok)
 	}
+
+	// 包含缩略图
+	{
+		files[0].MetadataSerialized = map[string]string{
+			model.ThumbSidecarMetadataKey: "1",
+		}
+		failed := fs.deleteGroupedFile(ctx, fs.GroupFileByPolicy(ctx, files))
+		asserts.Equal(map[uint][]string{
+			1: {},
+			2: {},
+			3: {},
+		}, failed)
+	}
 }
 
 func TestFileSystem_GetSource(t *testing.T) {
@@ -340,8 +352,6 @@ func TestFileSystem_GetSource(t *testing.T) {
 				sqlmock.NewRows([]string{"id", "type", "is_origin_link_enable"}).
 					AddRow(35, "local", true),
 			)
-		// 查找站点URL
-		mock.ExpectQuery("SELECT(.+)").WithArgs("siteURL").WillReturnRows(sqlmock.NewRows([]string{"id", "value"}).AddRow(1, "https://cloudreve.org"))
 
 		sourceURL, err := fs.GetSource(ctx, 2)
 		asserts.NoError(mock.ExpectationsWereMet())

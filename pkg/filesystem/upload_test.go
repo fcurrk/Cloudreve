@@ -16,7 +16,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 )
@@ -55,13 +54,13 @@ func (m FileHeaderMock) Delete(ctx context.Context, files []string) ([]string, e
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m FileHeaderMock) Thumb(ctx context.Context, files string) (*response.ContentResponse, error) {
+func (m FileHeaderMock) Thumb(ctx context.Context, files *model.File) (*response.ContentResponse, error) {
 	args := m.Called(ctx, files)
 	return args.Get(0).(*response.ContentResponse), args.Error(1)
 }
 
-func (m FileHeaderMock) Source(ctx context.Context, path string, url url.URL, expires int64, isDownload bool, speed int) (string, error) {
-	args := m.Called(ctx, path, url, expires, isDownload, speed)
+func (m FileHeaderMock) Source(ctx context.Context, path string, expires int64, isDownload bool, speed int) (string, error) {
+	args := m.Called(ctx, path, expires, isDownload, speed)
 	return args.Get(0).(string), args.Error(1)
 }
 

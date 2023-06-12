@@ -64,7 +64,7 @@ func InitSlaveRouter() *gin.Engine {
 		// 预览 / 外链
 		v3.GET("source/:speed/:path/:name", controllers.SlavePreview)
 		// 缩略图
-		v3.GET("thumb/:path", controllers.SlaveThumb)
+		v3.GET("thumb/:path/:ext", controllers.SlaveThumb)
 		// 删除文件
 		v3.POST("delete", controllers.SlaveDelete)
 		// 列出文件
@@ -260,8 +260,8 @@ func InitMasterRouter() *gin.Engine {
 				// 删除上传会话
 				upload.DELETE(":sessionId", controllers.SlaveDeleteUploadSession)
 			}
-			// OneDrive 存储策略凭证
-			slave.GET("credential/onedrive/:id", controllers.SlaveGetOneDriveCredential)
+			// Oauth 存储策略凭证
+			slave.GET("credential/:id", controllers.SlaveGetOauthCredential)
 		}
 
 		// 回调接口
@@ -308,6 +308,15 @@ func InitMasterRouter() *gin.Engine {
 				onedrive.GET(
 					"auth",
 					controllers.OneDriveOAuth,
+				)
+			}
+			// Google Drive related
+			gdrive := callback.Group("googledrive")
+			{
+				// OAuth 完成
+				gdrive.GET(
+					"auth",
+					controllers.GoogleDriveOAuth,
 				)
 			}
 			// 腾讯云COS策略上传回调
@@ -422,8 +431,14 @@ func InitMasterRouter() *gin.Engine {
 				admin.GET("groups", controllers.AdminGetGroups)
 				// 重新加载子服务
 				admin.GET("reload/:service", controllers.AdminReloadService)
-				// 重新加载子服务
-				admin.POST("mailTest", controllers.AdminSendTestMail)
+				// 测试设置
+				test := admin.Group("test")
+				{
+					// 测试邮件设置
+					test.POST("mail", controllers.AdminSendTestMail)
+					// 测试缩略图生成器调用
+					test.POST("thumb", controllers.AdminTestThumbGenerator)
+				}
 
 				// 离线下载相关
 				aria2 := admin.Group("aria2")
@@ -448,7 +463,14 @@ func InitMasterRouter() *gin.Engine {
 					// 创建COS回调函数
 					policy.POST("scf", controllers.AdminAddSCF)
 					// 获取 OneDrive OAuth URL
-					policy.GET(":id/oauth", controllers.AdminOneDriveOAuth)
+					oauth := policy.Group(":id/oauth")
+					{
+						// 获取 OneDrive OAuth URL
+						oauth.GET("onedrive", controllers.AdminOAuthURL("onedrive"))
+						// 获取 Google Drive OAuth URL
+						oauth.GET("googledrive", controllers.AdminOAuthURL("googledrive"))
+					}
+
 					// 获取 存储策略
 					policy.GET(":id", controllers.AdminGetPolicy)
 					// 删除 存储策略

@@ -17,10 +17,12 @@ import (
 	"time"
 
 	model "github.com/cloudreve/Cloudreve/v3/models"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/response"
 	"github.com/cloudreve/Cloudreve/v3/pkg/request"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
+	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 	"github.com/google/go-querystring/query"
 	cossdk "github.com/tencentyun/cos-go-sdk-v5"
 )
@@ -148,14 +150,7 @@ func (handler Driver) CORS() error {
 // Get 获取文件
 func (handler Driver) Get(ctx context.Context, path string) (response.RSCloser, error) {
 	// 获取文件源地址
-	downloadURL, err := handler.Source(
-		ctx,
-		path,
-		url.URL{},
-		int64(model.GetIntSetting("preview_timeout", 60)),
-		false,
-		0,
-	)
+	downloadURL, err := handler.Source(ctx, path, int64(model.GetIntSetting("preview_timeout", 60)), false, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +217,18 @@ func (handler Driver) Delete(ctx context.Context, files []string) ([]string, err
 }
 
 // Thumb 获取文件缩略图
-func (handler Driver) Thumb(ctx context.Context, path string) (*response.ContentResponse, error) {
+func (handler Driver) Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error) {
+	// quick check by extension name
+	// https://cloud.tencent.com/document/product/436/44893
+	supported := []string{"png", "jpg", "jpeg", "gif", "bmp", "webp", "heif", "heic"}
+	if len(handler.Policy.OptionsSerialized.ThumbExts) > 0 {
+		supported = handler.Policy.OptionsSerialized.ThumbExts
+	}
+
+	if !util.IsInExtensionList(supported, file.Name) || file.Size > (32<<(10*2)) {
+		return nil, driver.ErrorThumbNotSupported
+	}
+
 	var (
 		thumbSize = [2]uint{400, 300}
 		ok        = false
@@ -234,7 +240,7 @@ func (handler Driver) Thumb(ctx context.Context, path string) (*response.Content
 
 	source, err := handler.signSourceURL(
 		ctx,
-		path,
+		file.SourceName,
 		int64(model.GetIntSetting("preview_timeout", 60)),
 		&urlOption{},
 	)
@@ -254,14 +260,7 @@ func (handler Driver) Thumb(ctx context.Context, path string) (*response.Content
 }
 
 // Source 获取外链URL
-func (handler Driver) Source(
-	ctx context.Context,
-	path string,
-	baseURL url.URL,
-	ttl int64,
-	isDownload bool,
-	speed int,
-) (string, error) {
+func (handler Driver) Source(ctx context.Context, path string, ttl int64, isDownload bool, speed int) (string, error) {
 	// 尝试从上下文获取文件名
 	fileName := ""
 	if file, ok := ctx.Value(fsctx.FileModelCtx).(model.File); ok {

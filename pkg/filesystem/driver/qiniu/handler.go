@@ -13,10 +13,12 @@ import (
 	"time"
 
 	model "github.com/cloudreve/Cloudreve/v3/models"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/response"
 	"github.com/cloudreve/Cloudreve/v3/pkg/request"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
+	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/storage"
 )
@@ -117,14 +119,7 @@ func (handler *Driver) Get(ctx context.Context, path string) (response.RSCloser,
 	path = fmt.Sprintf("%s?v=%d", path, time.Now().UnixNano())
 
 	// 获取文件源地址
-	downloadURL, err := handler.Source(
-		ctx,
-		path,
-		url.URL{},
-		int64(model.GetIntSetting("preview_timeout", 60)),
-		false,
-		0,
-	)
+	downloadURL, err := handler.Source(ctx, path, int64(model.GetIntSetting("preview_timeout", 60)), false, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +225,18 @@ func (handler *Driver) Delete(ctx context.Context, files []string) ([]string, er
 }
 
 // Thumb 获取文件缩略图
-func (handler *Driver) Thumb(ctx context.Context, path string) (*response.ContentResponse, error) {
+func (handler *Driver) Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error) {
+	// quick check by extension name
+	// https://developer.qiniu.com/dora/api/basic-processing-images-imageview2
+	supported := []string{"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "avif", "psd"}
+	if len(handler.Policy.OptionsSerialized.ThumbExts) > 0 {
+		supported = handler.Policy.OptionsSerialized.ThumbExts
+	}
+
+	if !util.IsInExtensionList(supported, file.Name) || file.Size > (20<<(10*2)) {
+		return nil, driver.ErrorThumbNotSupported
+	}
+
 	var (
 		thumbSize = [2]uint{400, 300}
 		ok        = false
@@ -239,26 +245,19 @@ func (handler *Driver) Thumb(ctx context.Context, path string) (*response.Conten
 		return nil, errors.New("无法获取缩略图尺寸设置")
 	}
 
-	path = fmt.Sprintf("%s?imageView2/1/w/%d/h/%d", path, thumbSize[0], thumbSize[1])
+	thumb := fmt.Sprintf("%s?imageView2/1/w/%d/h/%d", file.SourceName, thumbSize[0], thumbSize[1])
 	return &response.ContentResponse{
 		Redirect: true,
 		URL: handler.signSourceURL(
 			ctx,
-			path,
+			thumb,
 			int64(model.GetIntSetting("preview_timeout", 60)),
 		),
 	}, nil
 }
 
 // Source 获取外链URL
-func (handler *Driver) Source(
-	ctx context.Context,
-	path string,
-	baseURL url.URL,
-	ttl int64,
-	isDownload bool,
-	speed int,
-) (string, error) {
+func (handler *Driver) Source(ctx context.Context, path string, ttl int64, isDownload bool, speed int) (string, error) {
 	// 尝试从上下文获取文件名
 	fileName := ""
 	if file, ok := ctx.Value(fsctx.FileModelCtx).(model.File); ok {

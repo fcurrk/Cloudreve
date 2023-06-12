@@ -64,10 +64,6 @@ func (fs *FileSystem) AddFile(ctx context.Context, parent *model.Folder, file fs
 		UploadSessionID:    uploadInfo.UploadSessionID,
 	}
 
-	if fs.Policy.IsThumbExist(uploadInfo.FileName) {
-		newFile.PicInfo = "1,1"
-	}
-
 	err = newFile.Create()
 
 	if err != nil {
@@ -97,9 +93,10 @@ func (fs *FileSystem) GetPhysicalFileContent(ctx context.Context, path string) (
 }
 
 // Preview 预览文件
-//   path   -   文件虚拟路径
-//   isText -   是否为文本文件，文本文件会忽略重定向，直接由
-//              服务端拉取中转给用户，故会对文件大小进行限制
+//
+//	path   -   文件虚拟路径
+//	isText -   是否为文本文件，文本文件会忽略重定向，直接由
+//	           服务端拉取中转给用户，故会对文件大小进行限制
 func (fs *FileSystem) Preview(ctx context.Context, id uint, isText bool) (*response.ContentResponse, error) {
 	err := fs.resetFileIDIfNotExist(ctx, id)
 	if err != nil {
@@ -174,6 +171,7 @@ func (fs *FileSystem) deleteGroupedFile(ctx context.Context, files map[uint][]*m
 	// 失败的文件列表
 	// TODO 并行删除
 	failed := make(map[uint][]string, len(files))
+	thumbs := make([]string, 0)
 
 	for policyID, toBeDeletedFiles := range files {
 		// 列举出需要物理删除的文件的物理路径
@@ -188,7 +186,11 @@ func (fs *FileSystem) deleteGroupedFile(ctx context.Context, files map[uint][]*m
 					uploadSession := session.(serializer.UploadSession)
 					uploadSessions = append(uploadSessions, &uploadSession)
 				}
+			}
 
+			// Check if sidecar thumb file exist
+			if model.IsTrueVal(toBeDeletedFiles[i].MetadataSerialized[model.ThumbSidecarMetadataKey]) {
+				thumbs = append(thumbs, toBeDeletedFiles[i].ThumbFile())
 			}
 		}
 
@@ -210,8 +212,11 @@ func (fs *FileSystem) deleteGroupedFile(ctx context.Context, files map[uint][]*m
 		}
 
 		// 执行删除
-		failedFile, _ := fs.Handler.Delete(ctx, sourceNamesAll)
-		failed[policyID] = failedFile
+		toBeDeletedSrcs := append(sourceNamesAll, thumbs...)
+		failedFile, _ := fs.Handler.Delete(ctx, toBeDeletedSrcs)
+
+		// Exclude failed results related to thumb file
+		failed[policyID] = util.SliceDifference(failedFile, thumbs)
 	}
 
 	return failed
@@ -295,8 +300,7 @@ func (fs *FileSystem) SignURL(ctx context.Context, file *model.File, ttl int64, 
 
 	// 签名最终URL
 	// 生成外链地址
-	siteURL := model.GetSiteURL()
-	source, err := fs.Handler.Source(ctx, fs.FileTarget[0].SourceName, *siteURL, ttl, isDownload, fs.User.Group.SpeedLimit)
+	source, err := fs.Handler.Source(ctx, fs.FileTarget[0].SourceName, ttl, isDownload, fs.User.Group.SpeedLimit)
 	if err != nil {
 		return "", serializer.NewError(serializer.CodeNotSet, "Failed to get source link", err)
 	}

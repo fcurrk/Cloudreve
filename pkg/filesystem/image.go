@@ -2,13 +2,16 @@ package filesystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 
 	"runtime"
 
 	model "github.com/cloudreve/Cloudreve/v3/models"
 	"github.com/cloudreve/Cloudreve/v3/pkg/conf"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/response"
 	"github.com/cloudreve/Cloudreve/v3/pkg/thumb"
@@ -20,28 +23,51 @@ import (
    ================
 */
 
-// HandledExtension 可以生成缩略图的文件扩展名
-var HandledExtension = []string{"jpg", "jpeg", "png", "gif"}
-
 // GetThumb 获取文件的缩略图
 func (fs *FileSystem) GetThumb(ctx context.Context, id uint) (*response.ContentResponse, error) {
 	// 根据 ID 查找文件
 	err := fs.resetFileIDIfNotExist(ctx, id)
-	if err != nil || fs.FileTarget[0].PicInfo == "" {
-		return &response.ContentResponse{
-			Redirect: false,
-		}, ErrObjectNotExist
+	if err != nil {
+		return nil, ErrObjectNotExist
+	}
+
+	file := fs.FileTarget[0]
+	if !file.ShouldLoadThumb() {
+		return nil, ErrObjectNotExist
 	}
 
 	w, h := fs.GenerateThumbnailSize(0, 0)
 	ctx = context.WithValue(ctx, fsctx.ThumbSizeCtx, [2]uint{w, h})
-	ctx = context.WithValue(ctx, fsctx.FileModelCtx, fs.FileTarget[0])
-	res, err := fs.Handler.Thumb(ctx, fs.FileTarget[0].SourceName)
-
-	// 本地存储策略出错时重新生成缩略图
-	if err != nil && fs.Policy.Type == "local" {
-		fs.GenerateThumbnail(ctx, &fs.FileTarget[0])
-		res, err = fs.Handler.Thumb(ctx, fs.FileTarget[0].SourceName)
+	ctx = context.WithValue(ctx, fsctx.FileModelCtx, file)
+	res, err := fs.Handler.Thumb(ctx, &file)
+	if errors.Is(err, driver.ErrorThumbNotExist) {
+		// Regenerate thumb if the thumb is not initialized yet
+		if generateErr := fs.generateThumbnail(ctx, &file); generateErr == nil {
+			res, err = fs.Handler.Thumb(ctx, &file)
+		} else {
+			err = generateErr
+		}
+	} else if errors.Is(err, driver.ErrorThumbNotSupported) {
+		// Policy handler explicitly indicates thumb not available, check if proxy is enabled
+		if fs.Policy.CouldProxyThumb() {
+			// if thumb id marked as existed, redirect to "sidecar" thumb file.
+			if file.MetadataSerialized != nil &&
+				file.MetadataSerialized[model.ThumbStatusMetadataKey] == model.ThumbStatusExist {
+				// redirect to sidecar file
+				res = &response.ContentResponse{
+					Redirect: true,
+				}
+				res.URL, err = fs.Handler.Source(ctx, file.ThumbFile(), int64(model.GetIntSetting("preview_timeout", 60)), false, 0)
+			} else {
+				// if not exist, generate and upload the sidecar thumb.
+				if err = fs.generateThumbnail(ctx, &file); err == nil {
+					return fs.GetThumb(ctx, id)
+				}
+			}
+		} else {
+			// thumb not supported and proxy is disabled, mark as not available
+			_ = updateThumbStatus(&file, model.ThumbStatusNotAvailable)
+		}
 	}
 
 	if err == nil && conf.SystemConfig.Mode == "master" {
@@ -84,65 +110,109 @@ func (pool *Pool) releaseWorker() {
 	<-pool.worker
 }
 
-// GenerateThumbnail 尝试为本地策略文件生成缩略图并获取图像原始大小
-// TODO 失败时，如果之前还有图像信息，则清除
-func (fs *FileSystem) GenerateThumbnail(ctx context.Context, file *model.File) {
-	// 判断是否可以生成缩略图
-	if !IsInExtensionList(HandledExtension, file.Name) {
-		return
-	}
-
+// generateThumbnail generates thumb for given file, upload the thumb file back with given suffix
+func (fs *FileSystem) generateThumbnail(ctx context.Context, file *model.File) error {
 	// 新建上下文
 	newCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// TODO: check file size
+
+	if file.Size > uint64(model.GetIntSetting("thumb_max_src_size", 31457280)) {
+		_ = updateThumbStatus(file, model.ThumbStatusNotAvailable)
+		return errors.New("file too large")
+	}
+
+	getThumbWorker().addWorker()
+	defer getThumbWorker().releaseWorker()
 
 	// 获取文件数据
 	source, err := fs.Handler.Get(newCtx, file.SourceName)
 	if err != nil {
-		return
+		return fmt.Errorf("faield to fetch original file %q: %w", file.SourceName, err)
 	}
 	defer source.Close()
-	getThumbWorker().addWorker()
-	defer getThumbWorker().releaseWorker()
 
-	image, err := thumb.NewThumbFromFile(source, file.Name)
-	if err != nil {
-		util.Log().Warning("Cannot generate thumb because of failed to parse image %q: %s", file.SourceName, err)
-		return
+	// Provide file source path for local policy files
+	src := ""
+	if file.GetPolicy().Type == "local" {
+		src = file.SourceName
 	}
 
-	// 获取原始图像尺寸
-	w, h := image.GetSize()
+	thumbRes, err := thumb.Generators.Generate(ctx, source, src, file.Name, model.GetSettingByNames(
+		"thumb_width",
+		"thumb_height",
+		"thumb_builtin_enabled",
+		"thumb_vips_enabled",
+		"thumb_ffmpeg_enabled",
+		"thumb_libreoffice_enabled",
+	))
+	if err != nil {
+		_ = updateThumbStatus(file, model.ThumbStatusNotAvailable)
+		return fmt.Errorf("failed to generate thumb for %q: %w", file.Name, err)
+	}
 
-	// 生成缩略图
-	image.GetThumb(fs.GenerateThumbnailSize(w, h))
-	// 保存到文件
-	err = image.Save(util.RelativePath(file.SourceName + model.GetSettingByNameWithDefault("thumb_file_suffix", "._thumb")))
-	image = nil
+	defer os.Remove(thumbRes.Path)
+
+	thumbFile, err := os.Open(thumbRes.Path)
+	if err != nil {
+		return fmt.Errorf("failed to open temp thumb %q: %w", thumbRes.Path, err)
+	}
+
+	defer thumbFile.Close()
+	fileInfo, err := thumbFile.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat temp thumb %q: %w", thumbRes.Path, err)
+	}
+
+	if err = fs.Handler.Put(newCtx, &fsctx.FileStream{
+		Mode:     fsctx.Overwrite,
+		File:     thumbFile,
+		Seeker:   thumbFile,
+		Size:     uint64(fileInfo.Size()),
+		SavePath: file.SourceName + model.GetSettingByNameWithDefault("thumb_file_suffix", "._thumb"),
+	}); err != nil {
+		return fmt.Errorf("failed to save thumb for %q: %w", file.Name, err)
+	}
+
 	if model.IsTrueVal(model.GetSettingByName("thumb_gc_after_gen")) {
-		util.Log().Debug("GenerateThumbnail runtime.GC")
+		util.Log().Debug("generateThumbnail runtime.GC")
 		runtime.GC()
 	}
 
-	if err != nil {
-		util.Log().Warning("Failed to save thumb: %s", err)
-		return
-	}
-
-	// 更新文件的图像信息
-	if file.Model.ID > 0 {
-		err = file.UpdatePicInfo(fmt.Sprintf("%d,%d", w, h))
-	} else {
-		file.PicInfo = fmt.Sprintf("%d,%d", w, h)
-	}
+	// Mark this file as thumb available
+	err = updateThumbStatus(file, model.ThumbStatusExist)
 
 	// 失败时删除缩略图文件
 	if err != nil {
 		_, _ = fs.Handler.Delete(newCtx, []string{file.SourceName + model.GetSettingByNameWithDefault("thumb_file_suffix", "._thumb")})
 	}
+
+	return nil
 }
 
 // GenerateThumbnailSize 获取要生成的缩略图的尺寸
 func (fs *FileSystem) GenerateThumbnailSize(w, h int) (uint, uint) {
-	return uint(model.GetIntSetting("thumb_width", 400)), uint(model.GetIntSetting("thumb_width", 300))
+	return uint(model.GetIntSetting("thumb_width", 400)), uint(model.GetIntSetting("thumb_height", 300))
+}
+
+func updateThumbStatus(file *model.File, status string) error {
+	if file.Model.ID > 0 {
+		meta := map[string]string{
+			model.ThumbStatusMetadataKey: status,
+		}
+
+		if status == model.ThumbStatusExist {
+			meta[model.ThumbSidecarMetadataKey] = "true"
+		}
+
+		return file.UpdateMetadata(meta)
+	} else {
+		if file.MetadataSerialized == nil {
+			file.MetadataSerialized = map[string]string{}
+		}
+
+		file.MetadataSerialized[model.ThumbStatusMetadataKey] = status
+	}
+
+	return nil
 }

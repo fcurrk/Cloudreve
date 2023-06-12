@@ -12,6 +12,8 @@ import (
 	model "github.com/cloudreve/Cloudreve/v3/models"
 	"github.com/cloudreve/Cloudreve/v3/pkg/auth"
 	"github.com/cloudreve/Cloudreve/v3/pkg/cache"
+	"github.com/cloudreve/Cloudreve/v3/pkg/conf"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/response"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
@@ -194,39 +196,43 @@ func (handler Driver) Delete(ctx context.Context, files []string) ([]string, err
 }
 
 // Thumb 获取文件缩略图
-func (handler Driver) Thumb(ctx context.Context, path string) (*response.ContentResponse, error) {
-	file, err := handler.Get(ctx, path+model.GetSettingByNameWithDefault("thumb_file_suffix", "._thumb"))
+func (handler Driver) Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error) {
+	// Quick check thumb existence on master.
+	if conf.SystemConfig.Mode == "master" && file.MetadataSerialized[model.ThumbStatusMetadataKey] == model.ThumbStatusNotExist {
+		// Tell invoker to generate a thumb
+		return nil, driver.ErrorThumbNotExist
+	}
+
+	thumbFile, err := handler.Get(ctx, file.ThumbFile())
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = fmt.Errorf("thumb not exist: %w (%w)", err, driver.ErrorThumbNotExist)
+		}
+
 		return nil, err
 	}
 
 	return &response.ContentResponse{
 		Redirect: false,
-		Content:  file,
+		Content:  thumbFile,
 	}, nil
 }
 
 // Source 获取外链URL
-func (handler Driver) Source(
-	ctx context.Context,
-	path string,
-	baseURL url.URL,
-	ttl int64,
-	isDownload bool,
-	speed int,
-) (string, error) {
+func (handler Driver) Source(ctx context.Context, path string, ttl int64, isDownload bool, speed int) (string, error) {
 	file, ok := ctx.Value(fsctx.FileModelCtx).(model.File)
 	if !ok {
 		return "", errors.New("failed to read file model context")
 	}
 
+	var baseURL *url.URL
 	// 是否启用了CDN
 	if handler.Policy.BaseURL != "" {
 		cdnURL, err := url.Parse(handler.Policy.BaseURL)
 		if err != nil {
 			return "", err
 		}
-		baseURL = *cdnURL
+		baseURL = cdnURL
 	}
 
 	var (
@@ -260,7 +266,11 @@ func (handler Driver) Source(
 		return "", serializer.NewError(serializer.CodeEncryptError, "Failed to sign url", err)
 	}
 
-	finalURL := baseURL.ResolveReference(signedURI).String()
+	finalURL := signedURI.String()
+	if baseURL != nil {
+		finalURL = baseURL.ResolveReference(signedURI).String()
+	}
+
 	return finalURL, nil
 }
 

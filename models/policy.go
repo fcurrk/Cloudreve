@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"github.com/gofrs/uuid"
+	"github.com/samber/lo"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -47,8 +48,8 @@ type PolicyOption struct {
 	FileType []string `json:"file_type"`
 	// MimeType
 	MimeType string `json:"mimetype"`
-	// OdRedirect Onedrive 重定向地址
-	OdRedirect string `json:"od_redirect,omitempty"`
+	// OauthRedirect Oauth 重定向地址
+	OauthRedirect string `json:"od_redirect,omitempty"`
 	// OdProxy Onedrive 反代地址
 	OdProxy string `json:"od_proxy,omitempty"`
 	// OdDriver OneDrive 驱动器定位符
@@ -68,18 +69,8 @@ type PolicyOption struct {
 	// Set this to `true` to force the request to use path-style addressing,
 	// i.e., `http://s3.amazonaws.com/BUCKET/KEY `
 	S3ForcePathStyle bool `json:"s3_path_style"`
-}
-
-// thumbSuffix 支持缩略图处理的文件扩展名
-var thumbSuffix = map[string][]string{
-	"local":    {},
-	"qiniu":    {".psd", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"},
-	"oss":      {".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"},
-	"cos":      {".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"},
-	"upyun":    {".svg", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".tiff", ".bmp"},
-	"s3":       {},
-	"remote":   {},
-	"onedrive": {"*"},
+	// File extensions that support thumbnail generation using native policy API.
+	ThumbExts []string `json:"thumb_exts,omitempty"`
 }
 
 func init() {
@@ -165,22 +156,23 @@ func (policy *Policy) GenerateFileName(uid uint, origin string) string {
 	fileRule := policy.FileNameRule
 
 	replaceTable := map[string]string{
-		"{randomkey16}":    util.RandStringRunes(16),
-		"{randomkey8}":     util.RandStringRunes(8),
-		"{timestamp}":      strconv.FormatInt(time.Now().Unix(), 10),
-		"{timestamp_nano}": strconv.FormatInt(time.Now().UnixNano(), 10),
-		"{uid}":            strconv.Itoa(int(uid)),
-		"{datetime}":       time.Now().Format("20060102150405"),
-		"{date}":           time.Now().Format("20060102"),
-		"{year}":           time.Now().Format("2006"),
-		"{month}":          time.Now().Format("01"),
-		"{day}":            time.Now().Format("02"),
-		"{hour}":           time.Now().Format("15"),
-		"{minute}":         time.Now().Format("04"),
-		"{second}":         time.Now().Format("05"),
-		"{originname}":     origin,
-		"{ext}":            filepath.Ext(origin),
-		"{uuid}":           uuid.Must(uuid.NewV4()).String(),
+		"{randomkey16}":            util.RandStringRunes(16),
+		"{randomkey8}":             util.RandStringRunes(8),
+		"{timestamp}":              strconv.FormatInt(time.Now().Unix(), 10),
+		"{timestamp_nano}":         strconv.FormatInt(time.Now().UnixNano(), 10),
+		"{uid}":                    strconv.Itoa(int(uid)),
+		"{datetime}":               time.Now().Format("20060102150405"),
+		"{date}":                   time.Now().Format("20060102"),
+		"{year}":                   time.Now().Format("2006"),
+		"{month}":                  time.Now().Format("01"),
+		"{day}":                    time.Now().Format("02"),
+		"{hour}":                   time.Now().Format("15"),
+		"{minute}":                 time.Now().Format("04"),
+		"{second}":                 time.Now().Format("05"),
+		"{originname}":             origin,
+		"{ext}":                    filepath.Ext(origin),
+		"{originname_without_ext}": strings.TrimSuffix(origin, filepath.Ext(origin)),
+		"{uuid}":                   uuid.Must(uuid.NewV4()).String(),
 	}
 
 	fileRule = util.Replace(replaceTable, fileRule)
@@ -190,17 +182,6 @@ func (policy *Policy) GenerateFileName(uid uint, origin string) string {
 // IsDirectlyPreview 返回此策略下文件是否可以直接预览（不需要重定向）
 func (policy *Policy) IsDirectlyPreview() bool {
 	return policy.Type == "local"
-}
-
-// IsThumbExist 给定文件名，返回此存储策略下是否可能存在缩略图
-func (policy *Policy) IsThumbExist(name string) bool {
-	if list, ok := thumbSuffix[policy.Type]; ok {
-		if len(list) == 1 && list[0] == "*" {
-			return true
-		}
-		return util.ContainsString(list, strings.ToLower(filepath.Ext(name)))
-	}
-	return false
 }
 
 // IsTransitUpload 返回此策略上传给定size文件时是否需要服务端中转
@@ -248,4 +229,15 @@ func (policy *Policy) UpdateAccessKeyAndClearCache(s string) error {
 // ClearCache 清空policy缓存
 func (policy *Policy) ClearCache() {
 	cache.Deletes([]string{strconv.FormatUint(uint64(policy.ID), 10)}, "policy_")
+}
+
+// CouldProxyThumb return if proxy thumbs is allowed for this policy.
+func (policy *Policy) CouldProxyThumb() bool {
+	if policy.Type == "local" || !IsTrueVal(GetSettingByName("thumb_proxy_enabled")) {
+		return false
+	}
+
+	allowed := make([]uint, 0)
+	_ = json.Unmarshal([]byte(GetSettingByName("thumb_proxy_policy")), &allowed)
+	return lo.Contains[uint](allowed, policy.ID)
 }

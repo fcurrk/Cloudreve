@@ -17,6 +17,8 @@ var (
 	ErrDeleteFile = errors.New("cannot delete file")
 	// ErrClientCanceled 客户端取消操作
 	ErrClientCanceled = errors.New("client canceled")
+	// Desired thumb size not available
+	ErrThumbSizeNotFound = errors.New("thumb size not found")
 )
 
 // Client OneDrive客户端
@@ -56,7 +58,7 @@ func NewClient(policy *model.Policy) (*Client, error) {
 		Policy:            policy,
 		ClientID:          policy.BucketName,
 		ClientSecret:      policy.SecretKey,
-		Redirect:          policy.OptionsSerialized.OdRedirect,
+		Redirect:          policy.OptionsSerialized.OauthRedirect,
 		Request:           request.NewClient(),
 		ClusterController: cluster.DefaultController,
 	}

@@ -16,8 +16,75 @@ import (
 	"strconv"
 	"time"
 
+	model "github.com/cloudreve/Cloudreve/v3/models"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem"
 )
+
+type FileDeadProps struct {
+	*model.File
+}
+
+// 实现 webdav.DeadPropsHolder 接口，不能在models.file里面定义
+func (file *FileDeadProps) DeadProps() (map[xml.Name]Property, error) {
+	return map[xml.Name]Property{
+		xml.Name{Space: "http://owncloud.org/ns", Local: "checksums"}: {
+			XMLName: xml.Name{
+				Space: "http://owncloud.org/ns", Local: "checksums",
+			},
+			InnerXML: []byte("<checksum>" + file.MetadataSerialized[model.ChecksumMetadataKey] + "</checksum>"),
+		},
+	}, nil
+}
+
+func (file *FileDeadProps) Patch(proppatches []Proppatch) ([]Propstat, error) {
+	var (
+		stat Propstat
+		err  error
+	)
+	stat.Status = http.StatusOK
+	for _, patch := range proppatches {
+		for _, prop := range patch.Props {
+			stat.Props = append(stat.Props, Property{XMLName: prop.XMLName})
+			if prop.XMLName.Space == "DAV:" && prop.XMLName.Local == "lastmodified" {
+				var modtimeUnix int64
+				modtimeUnix, err = strconv.ParseInt(string(prop.InnerXML), 10, 64)
+				if err == nil {
+					err = model.DB.Model(file).UpdateColumn("updated_at", time.Unix(modtimeUnix, 0)).Error
+				}
+			}
+		}
+	}
+	return []Propstat{stat}, err
+}
+
+type FolderDeadProps struct {
+	*model.Folder
+}
+
+func (folder *FolderDeadProps) DeadProps() (map[xml.Name]Property, error) {
+	return nil, nil
+}
+
+func (folder *FolderDeadProps) Patch(proppatches []Proppatch) ([]Propstat, error) {
+	var (
+		stat Propstat
+		err  error
+	)
+	stat.Status = http.StatusOK
+	for _, patch := range proppatches {
+		for _, prop := range patch.Props {
+			stat.Props = append(stat.Props, Property{XMLName: prop.XMLName})
+			if prop.XMLName.Space == "DAV:" && prop.XMLName.Local == "lastmodified" {
+				var modtimeUnix int64
+				modtimeUnix, err = strconv.ParseInt(string(prop.InnerXML), 10, 64)
+				if err == nil {
+					err = model.DB.Model(folder).UpdateColumn("updated_at", time.Unix(modtimeUnix, 0)).Error
+				}
+			}
+		}
+	}
+	return []Propstat{stat}, err
+}
 
 type FileInfo interface {
 	GetSize() uint64
@@ -177,8 +244,18 @@ var liveProps = map[xml.Name]struct {
 // of one Propstat element.
 func props(ctx context.Context, fs *filesystem.FileSystem, ls LockSystem, fi FileInfo, pnames []xml.Name) ([]Propstat, error) {
 	isDir := fi.IsDir()
+	if !isDir {
+		fi = &FileDeadProps{fi.(*model.File)}
+	}
 
 	var deadProps map[xml.Name]Property
+	if dph, ok := fi.(DeadPropsHolder); ok {
+		var err error
+		deadProps, err = dph.DeadProps()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	pstatOK := Propstat{Status: http.StatusOK}
 	pstatNotFound := Propstat{Status: http.StatusNotFound}
@@ -210,14 +287,27 @@ func props(ctx context.Context, fs *filesystem.FileSystem, ls LockSystem, fi Fil
 // Propnames returns the property names defined for resource name.
 func propnames(ctx context.Context, fs *filesystem.FileSystem, ls LockSystem, fi FileInfo) ([]xml.Name, error) {
 	isDir := fi.IsDir()
+	if !isDir {
+		fi = &FileDeadProps{fi.(*model.File)}
+	}
 
 	var deadProps map[xml.Name]Property
+	if dph, ok := fi.(DeadPropsHolder); ok {
+		var err error
+		deadProps, err = dph.DeadProps()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	pnames := make([]xml.Name, 0, len(liveProps)+len(deadProps))
 	for pn, prop := range liveProps {
 		if prop.findFn != nil && (prop.dir || !isDir) {
 			pnames = append(pnames, pn)
 		}
+	}
+	for pn := range deadProps {
+		pnames = append(pnames, pn)
 	}
 	return pnames, nil
 }
@@ -281,6 +371,29 @@ loop:
 		return makePropstats(pstatForbidden, pstatFailedDep), nil
 	}
 
+	// very unlikely to be false
+	exist, info := isPathExist(ctx, fs, name)
+	if exist {
+		var dph DeadPropsHolder
+		if info.IsDir() {
+			dph = &FolderDeadProps{info.(*model.Folder)}
+		} else {
+			dph = &FileDeadProps{info.(*model.File)}
+		}
+		ret, err := dph.Patch(patches)
+		if err != nil {
+			return nil, err
+		}
+		// http://www.webdav.org/specs/rfc4918.html#ELEMENT_propstat says that
+		// "The contents of the prop XML element must only list the names of
+		// properties to which the result in the status element applies."
+		for _, pstat := range ret {
+			for i, p := range pstat.Props {
+				pstat.Props[i] = Property{XMLName: p.XMLName}
+			}
+		}
+		return ret, nil
+	}
 	// The file doesn't implement the optional DeadPropsHolder interface, so
 	// all patches are forbidden.
 	pstat := Propstat{Status: http.StatusOK}

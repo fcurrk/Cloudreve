@@ -8,15 +8,18 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
 	model "github.com/cloudreve/Cloudreve/v3/models"
 	"github.com/cloudreve/Cloudreve/v3/pkg/auth"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/response"
 	"github.com/cloudreve/Cloudreve/v3/pkg/request"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
+	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 )
 
 // Driver 远程存储策略适配器
@@ -121,7 +124,7 @@ func (handler *Driver) Get(ctx context.Context, path string) (response.RSCloser,
 	}
 
 	// 获取文件源地址
-	downloadURL, err := handler.Source(ctx, path, url.URL{}, 0, true, speedLimit)
+	downloadURL, err := handler.Source(ctx, path, 0, true, speedLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -204,9 +207,19 @@ func (handler *Driver) Delete(ctx context.Context, files []string) ([]string, er
 }
 
 // Thumb 获取文件缩略图
-func (handler *Driver) Thumb(ctx context.Context, path string) (*response.ContentResponse, error) {
-	sourcePath := base64.RawURLEncoding.EncodeToString([]byte(path))
-	thumbURL := handler.getAPIUrl("thumb") + "/" + sourcePath
+func (handler *Driver) Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error) {
+	// quick check by extension name
+	supported := []string{"png", "jpg", "jpeg", "gif"}
+	if len(handler.Policy.OptionsSerialized.ThumbExts) > 0 {
+		supported = handler.Policy.OptionsSerialized.ThumbExts
+	}
+
+	if !util.IsInExtensionList(supported, file.Name) {
+		return nil, driver.ErrorThumbNotSupported
+	}
+
+	sourcePath := base64.RawURLEncoding.EncodeToString([]byte(file.SourceName))
+	thumbURL := fmt.Sprintf("%s/%s/%s", handler.getAPIUrl("thumb"), sourcePath, filepath.Ext(file.Name))
 	ttl := model.GetIntSetting("preview_timeout", 60)
 	signedThumbURL, err := auth.SignURI(handler.AuthInstance, thumbURL, int64(ttl))
 	if err != nil {
@@ -220,14 +233,7 @@ func (handler *Driver) Thumb(ctx context.Context, path string) (*response.Conten
 }
 
 // Source 获取外链URL
-func (handler *Driver) Source(
-	ctx context.Context,
-	path string,
-	baseURL url.URL,
-	ttl int64,
-	isDownload bool,
-	speed int,
-) (string, error) {
+func (handler *Driver) Source(ctx context.Context, path string, ttl int64, isDownload bool, speed int) (string, error) {
 	// 尝试从上下文获取文件名
 	fileName := "file"
 	if file, ok := ctx.Value(fsctx.FileModelCtx).(model.File); ok {

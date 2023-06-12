@@ -15,6 +15,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v3/pkg/wopi"
 	"github.com/gin-gonic/gin"
 	"io/fs"
+	"path/filepath"
 )
 
 // Init 初始化启动
@@ -39,13 +40,31 @@ func Init(path string, statics fs.FS) {
 		{
 			"both",
 			func() {
-				cache.Init(conf.SystemConfig.Mode == "slave")
+				cache.Init()
+			},
+		},
+		{
+			"slave",
+			func() {
+				model.InitSlaveDefaults()
+			},
+		},
+		{
+			"slave",
+			func() {
+				cache.InitSlaveOverwrites()
 			},
 		},
 		{
 			"master",
 			func() {
 				model.Init()
+			},
+		},
+		{
+			"both",
+			func() {
+				cache.Restore(filepath.Join(model.GetSettingByName("temp_path"), cache.DefaultCacheFile))
 			},
 		},
 		{

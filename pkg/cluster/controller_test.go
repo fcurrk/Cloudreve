@@ -320,7 +320,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 
 	// node not exit
 	{
-		res, err := c.GetOneDriveToken("2", 1)
+		res, err := c.GetPolicyOauthToken("2", 1)
 		a.Equal(ErrMasterNotFound, err)
 		a.Empty(res)
 	}
@@ -328,7 +328,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 	// return none 200
 	{
 		mockRequest := &requestMock{}
-		mockRequest.On("Request", "GET", "/api/v3/slave/credential/onedrive/1", testMock.Anything, testMock.Anything).Return(&request.Response{
+		mockRequest.On("Request", "GET", "/api/v3/slave/credential/1", testMock.Anything, testMock.Anything).Return(&request.Response{
 			Response: &http.Response{StatusCode: http.StatusConflict},
 		})
 		c := &slaveController{
@@ -336,7 +336,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 				"1": {Client: mockRequest},
 			},
 		}
-		res, err := c.GetOneDriveToken("1", 1)
+		res, err := c.GetPolicyOauthToken("1", 1)
 		a.Error(err)
 		a.Empty(res)
 		mockRequest.AssertExpectations(t)
@@ -345,7 +345,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 	// master return error
 	{
 		mockRequest := &requestMock{}
-		mockRequest.On("Request", "GET", "/api/v3/slave/credential/onedrive/1", testMock.Anything, testMock.Anything).Return(&request.Response{
+		mockRequest.On("Request", "GET", "/api/v3/slave/credential/1", testMock.Anything, testMock.Anything).Return(&request.Response{
 			Response: &http.Response{
 				StatusCode: 200,
 				Body:       ioutil.NopCloser(strings.NewReader("{\"code\":1}")),
@@ -356,7 +356,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 				"1": {Client: mockRequest},
 			},
 		}
-		res, err := c.GetOneDriveToken("1", 1)
+		res, err := c.GetPolicyOauthToken("1", 1)
 		a.Equal(1, err.(serializer.AppError).Code)
 		a.Empty(res)
 		mockRequest.AssertExpectations(t)
@@ -365,7 +365,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 	// success
 	{
 		mockRequest := &requestMock{}
-		mockRequest.On("Request", "GET", "/api/v3/slave/credential/onedrive/1", testMock.Anything, testMock.Anything).Return(&request.Response{
+		mockRequest.On("Request", "GET", "/api/v3/slave/credential/1", testMock.Anything, testMock.Anything).Return(&request.Response{
 			Response: &http.Response{
 				StatusCode: 200,
 				Body:       ioutil.NopCloser(strings.NewReader("{\"data\":\"expected\"}")),
@@ -376,7 +376,7 @@ func TestSlaveController_GetOneDriveToken(t *testing.T) {
 				"1": {Client: mockRequest},
 			},
 		}
-		res, err := c.GetOneDriveToken("1", 1)
+		res, err := c.GetPolicyOauthToken("1", 1)
 		a.NoError(err)
 		a.Equal("expected", res)
 		mockRequest.AssertExpectations(t)

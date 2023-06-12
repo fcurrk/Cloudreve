@@ -1,6 +1,7 @@
 package model
 
 import (
+	"github.com/cloudreve/Cloudreve/v3/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v3/pkg/conf"
 	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 	"github.com/gofrs/uuid"
@@ -106,6 +107,20 @@ Neue',Helvetica,Arial,sans-serif; box-sizing: border-box; font-size: 14px; verti
 	{Name: "thumb_encode_method", Value: "jpg", Type: "thumb"},
 	{Name: "thumb_gc_after_gen", Value: "0", Type: "thumb"},
 	{Name: "thumb_encode_quality", Value: "85", Type: "thumb"},
+	{Name: "thumb_builtin_enabled", Value: "1", Type: "thumb"},
+	{Name: "thumb_vips_enabled", Value: "0", Type: "thumb"},
+	{Name: "thumb_ffmpeg_enabled", Value: "0", Type: "thumb"},
+	{Name: "thumb_vips_path", Value: "vips", Type: "thumb"},
+	{Name: "thumb_vips_exts", Value: "csv,mat,img,hdr,pbm,pgm,ppm,pfm,pnm,svg,svgz,j2k,jp2,jpt,j2c,jpc,gif,png,jpg,jpeg,jpe,webp,tif,tiff,fits,fit,fts,exr,jxl,pdf,heic,heif,avif,svs,vms,vmu,ndpi,scn,mrxs,svslide,bif,raw", Type: "thumb"},
+	{Name: "thumb_ffmpeg_seek", Value: "00:00:01.00", Type: "thumb"},
+	{Name: "thumb_ffmpeg_path", Value: "ffmpeg", Type: "thumb"},
+	{Name: "thumb_ffmpeg_exts", Value: "3g2,3gp,asf,asx,avi,divx,flv,m2ts,m2v,m4v,mkv,mov,mp4,mpeg,mpg,mts,mxf,ogv,rm,swf,webm,wmv", Type: "thumb"},
+	{Name: "thumb_libreoffice_path", Value: "soffice", Type: "thumb"},
+	{Name: "thumb_libreoffice_enabled", Value: "0", Type: "thumb"},
+	{Name: "thumb_libreoffice_exts", Value: "md,ods,ots,fods,uos,xlsx,xml,xls,xlt,dif,dbf,html,slk,csv,xlsm,docx,dotx,doc,dot,rtf,xlsm,xlst,xls,xlw,xlc,xlt,pptx,ppsx,potx,pomx,ppt,pps,ppm,pot,pom", Type: "thumb"},
+	{Name: "thumb_proxy_enabled", Value: "0", Type: "thumb"},
+	{Name: "thumb_proxy_policy", Value: "[]", Type: "thumb"},
+	{Name: "thumb_max_src_size", Value: "31457280", Type: "thumb"},
 	{Name: "pwa_small_icon", Value: "/static/img/favicon.ico", Type: "pwa"},
 	{Name: "pwa_medium_icon", Value: "/static/img/logo192.png", Type: "pwa"},
 	{Name: "pwa_large_icon", Value: "/static/img/logo512.png", Type: "pwa"},
@@ -119,4 +134,10 @@ Neue',Helvetica,Arial,sans-serif; box-sizing: border-box; font-size: 14px; verti
 	{Name: "wopi_endpoint", Value: "", Type: "wopi"},
 	{Name: "wopi_max_size", Value: "52428800", Type: "wopi"},
 	{Name: "wopi_session_timeout", Value: "36000", Type: "wopi"},
+}
+
+func InitSlaveDefaults() {
+	for _, setting := range defaultSettings {
+		cache.Set("setting_"+setting.Name, setting.Value, -1)
+	}
 }

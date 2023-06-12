@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -106,7 +105,7 @@ func TestDriver_Source(t *testing.T) {
 
 	// 失败
 	{
-		res, err := handler.Source(context.Background(), "123.jpg", url.URL{}, 1, true, 0)
+		res, err := handler.Source(context.Background(), "123.jpg", 1, true, 0)
 		asserts.Error(err)
 		asserts.Empty(res)
 	}
@@ -116,7 +115,7 @@ func TestDriver_Source(t *testing.T) {
 		handler.Client.Credential.ExpiresIn = time.Now().Add(time.Duration(100) * time.Hour).Unix()
 		handler.Client.Credential.AccessToken = "1"
 		cache.Set("onedrive_source_0_123.jpg", "res", 1)
-		res, err := handler.Source(context.Background(), "123.jpg", url.URL{}, 0, true, 0)
+		res, err := handler.Source(context.Background(), "123.jpg", 0, true, 0)
 		cache.Deletes([]string{"0_123.jpg"}, "onedrive_source_")
 		asserts.NoError(err)
 		asserts.Equal("res", res)
@@ -131,7 +130,7 @@ func TestDriver_Source(t *testing.T) {
 		handler.Client.Credential.ExpiresIn = time.Now().Add(time.Duration(100) * time.Hour).Unix()
 		handler.Client.Credential.AccessToken = "1"
 		cache.Set(fmt.Sprintf("onedrive_source_file_%d_1", file.UpdatedAt.Unix()), "res", 0)
-		res, err := handler.Source(ctx, "123.jpg", url.URL{}, 1, true, 0)
+		res, err := handler.Source(ctx, "123.jpg", 1, true, 0)
 		cache.Deletes([]string{"0_123.jpg"}, "onedrive_source_")
 		asserts.NoError(err)
 		asserts.Equal("res", res)
@@ -156,7 +155,7 @@ func TestDriver_Source(t *testing.T) {
 		})
 		handler.Client.Request = clientMock
 		handler.Client.Credential.AccessToken = "1"
-		res, err := handler.Source(context.Background(), "123.jpg", url.URL{}, 1, true, 0)
+		res, err := handler.Source(context.Background(), "123.jpg", 1, true, 0)
 		asserts.NoError(err)
 		asserts.Equal("123321", res)
 	}
@@ -246,19 +245,19 @@ func TestDriver_Thumb(t *testing.T) {
 	}
 	handler.Client, _ = NewClient(&model.Policy{})
 	handler.Client.Credential.ExpiresIn = time.Now().Add(time.Duration(100) * time.Hour).Unix()
+	file := &model.File{PicInfo: "1,1", Model: gorm.Model{ID: 1}}
 
 	// 失败
 	{
 		ctx := context.WithValue(context.Background(), fsctx.ThumbSizeCtx, [2]uint{10, 20})
-		ctx = context.WithValue(ctx, fsctx.FileModelCtx, model.File{PicInfo: "1,1", Model: gorm.Model{ID: 1}})
-		res, err := handler.Thumb(ctx, "123.jpg")
+		res, err := handler.Thumb(ctx, file)
 		asserts.Error(err)
 		asserts.Empty(res.URL)
 	}
 
 	// 上下文错误
 	{
-		_, err := handler.Thumb(context.Background(), "123.jpg")
+		_, err := handler.Thumb(context.Background(), file)
 		asserts.Error(err)
 	}
 }

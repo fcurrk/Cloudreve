@@ -10,7 +10,10 @@ import (
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 	"io/ioutil"
+	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Hook 钩子函数
@@ -177,24 +180,12 @@ func GenericAfterUpdate(ctx context.Context, fs *FileSystem, newFile fsctx.FileH
 // SlaveAfterUpload Slave模式下上传完成钩子
 func SlaveAfterUpload(session *serializer.UploadSession) Hook {
 	return func(ctx context.Context, fs *FileSystem, fileHeader fsctx.FileHeader) error {
-		fileInfo := fileHeader.Info()
-
-		// 构造一个model.File，用于生成缩略图
-		file := model.File{
-			Name:       fileInfo.FileName,
-			SourceName: fileInfo.SavePath,
-		}
-		fs.GenerateThumbnail(ctx, &file)
-
 		if session.Callback == "" {
 			return nil
 		}
 
 		// 发送回调请求
-		callbackBody := serializer.UploadCallback{
-			PicInfo: file.PicInfo,
-		}
-
+		callbackBody := serializer.UploadCallback{}
 		return cluster.RemoteCallback(session.Callback, callbackBody)
 	}
 }
@@ -228,21 +219,6 @@ func GenericAfterUpload(ctx context.Context, fs *FileSystem, fileHeader fsctx.Fi
 	}
 	fileHeader.SetModel(file)
 
-	return nil
-}
-
-// HookGenerateThumb 生成缩略图
-func HookGenerateThumb(ctx context.Context, fs *FileSystem, fileHeader fsctx.FileHeader) error {
-	// 异步尝试生成缩略图
-	fileMode := fileHeader.Info().Model.(*model.File)
-	if fs.Policy.IsThumbGenerateNeeded() {
-		fs.recycleLock.Lock()
-		go func() {
-			defer fs.recycleLock.Unlock()
-			_, _ = fs.Handler.Delete(ctx, []string{fileMode.SourceName + model.GetSettingByNameWithDefault("thumb_file_suffix", "._thumb")})
-			fs.GenerateThumbnail(ctx, fileMode)
-		}()
-	}
 	return nil
 }
 
@@ -284,10 +260,6 @@ func HookPopPlaceholderToFile(picInfo string) Hook {
 	return func(ctx context.Context, fs *FileSystem, fileHeader fsctx.FileHeader) error {
 		fileInfo := fileHeader.Info()
 		fileModel := fileInfo.Model.(*model.File)
-		if picInfo == "" && fs.Policy.IsThumbExist(fileInfo.FileName) {
-			picInfo = "1,1"
-		}
-
 		return fileModel.PopChunkToFile(fileInfo.LastModified, picInfo)
 	}
 }
@@ -296,6 +268,37 @@ func HookPopPlaceholderToFile(picInfo string) Hook {
 func HookDeleteUploadSession(id string) Hook {
 	return func(ctx context.Context, fs *FileSystem, fileHeader fsctx.FileHeader) error {
 		cache.Deletes([]string{id}, UploadSessionCachePrefix)
+		return nil
+	}
+}
+
+// NewWebdavAfterUploadHook 每次创建一个新的钩子函数 rclone 在 PUT 请求里有 OC-Checksum 字符串
+// 和 X-OC-Mtime
+func NewWebdavAfterUploadHook(request *http.Request) func(ctx context.Context, fs *FileSystem, newFile fsctx.FileHeader) error {
+	var modtime time.Time
+	if timeVal := request.Header.Get("X-OC-Mtime"); timeVal != "" {
+		timeUnix, err := strconv.ParseInt(timeVal, 10, 64)
+		if err == nil {
+			modtime = time.Unix(timeUnix, 0)
+		}
+	}
+	checksum := request.Header.Get("OC-Checksum")
+
+	return func(ctx context.Context, fs *FileSystem, newFile fsctx.FileHeader) error {
+		file := newFile.Info().Model.(*model.File)
+		if !modtime.IsZero() {
+			err := model.DB.Model(file).UpdateColumn("updated_at", modtime).Error
+			if err != nil {
+				return err
+			}
+		}
+
+		if checksum != "" {
+			return file.UpdateMetadata(map[string]string{
+				model.ChecksumMetadataKey: checksum,
+			})
+		}
+
 		return nil
 	}
 }

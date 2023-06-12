@@ -91,7 +91,6 @@ func (handler Driver) Get(ctx context.Context, path string) (response.RSCloser, 
 	downloadURL, err := handler.Source(
 		ctx,
 		path,
-		url.URL{},
 		60,
 		false,
 		0,
@@ -136,7 +135,7 @@ func (handler Driver) Delete(ctx context.Context, files []string) ([]string, err
 }
 
 // Thumb 获取文件缩略图
-func (handler Driver) Thumb(ctx context.Context, path string) (*response.ContentResponse, error) {
+func (handler Driver) Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error) {
 	var (
 		thumbSize = [2]uint{400, 300}
 		ok        = false
@@ -145,13 +144,15 @@ func (handler Driver) Thumb(ctx context.Context, path string) (*response.Content
 		return nil, errors.New("failed to get thumbnail size")
 	}
 
-	res, err := handler.Client.GetThumbURL(ctx, path, thumbSize[0], thumbSize[1])
+	res, err := handler.Client.GetThumbURL(ctx, file.SourceName, thumbSize[0], thumbSize[1])
 	if err != nil {
-		// 如果出现异常，就清空文件的pic_info
-		if file, ok := ctx.Value(fsctx.FileModelCtx).(model.File); ok {
-			file.UpdatePicInfo("")
+		var apiErr *RespError
+		if errors.As(err, &apiErr); err == ErrThumbSizeNotFound || (apiErr != nil && apiErr.APIError.Code == notFoundError) {
+			// OneDrive cannot generate thumbnail for this file
+			return nil, driver.ErrorThumbNotSupported
 		}
 	}
+
 	return &response.ContentResponse{
 		Redirect: true,
 		URL:      res,
@@ -162,7 +163,6 @@ func (handler Driver) Thumb(ctx context.Context, path string) (*response.Content
 func (handler Driver) Source(
 	ctx context.Context,
 	path string,
-	baseURL url.URL,
 	ttl int64,
 	isDownload bool,
 	speed int,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"io"
 	"net/http"
 	"net/url"
@@ -163,14 +164,7 @@ func (handler *Driver) List(ctx context.Context, base string, recursive bool) ([
 // Get 获取文件
 func (handler *Driver) Get(ctx context.Context, path string) (response.RSCloser, error) {
 	// 获取文件源地址
-	downloadURL, err := handler.Source(
-		ctx,
-		path,
-		url.URL{},
-		int64(model.GetIntSetting("preview_timeout", 60)),
-		false,
-		0,
-	)
+	downloadURL, err := handler.Source(ctx, path, int64(model.GetIntSetting("preview_timeout", 60)), false, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -257,26 +251,19 @@ func (handler *Driver) Delete(ctx context.Context, files []string) ([]string, er
 	for _, deleteRes := range res.Deleted {
 		deleted = append(deleted, *deleteRes.Key)
 	}
-	failed = util.SliceDifference(failed, deleted)
+	failed = util.SliceDifference(files, deleted)
 
 	return failed, nil
 
 }
 
 // Thumb 获取文件缩略图
-func (handler *Driver) Thumb(ctx context.Context, path string) (*response.ContentResponse, error) {
-	return nil, errors.New("未实现")
+func (handler *Driver) Thumb(ctx context.Context, file *model.File) (*response.ContentResponse, error) {
+	return nil, driver.ErrorThumbNotSupported
 }
 
 // Source 获取外链URL
-func (handler *Driver) Source(
-	ctx context.Context,
-	path string,
-	baseURL url.URL,
-	ttl int64,
-	isDownload bool,
-	speed int,
-) (string, error) {
+func (handler *Driver) Source(ctx context.Context, path string, ttl int64, isDownload bool, speed int) (string, error) {
 
 	// 尝试从上下文获取文件名
 	fileName := ""
@@ -339,9 +326,10 @@ func (handler *Driver) Token(ctx context.Context, ttl int64, uploadSession *seri
 	// 创建分片上传
 	expires := time.Now().Add(time.Duration(ttl) * time.Second)
 	res, err := handler.svc.CreateMultipartUpload(&s3.CreateMultipartUploadInput{
-		Bucket:  &handler.Policy.BucketName,
-		Key:     &fileInfo.SavePath,
-		Expires: &expires,
+		Bucket:      &handler.Policy.BucketName,
+		Key:         &fileInfo.SavePath,
+		Expires:     &expires,
+		ContentType: aws.String(fileInfo.DetectMimeType()),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multipart upload: %w", err)

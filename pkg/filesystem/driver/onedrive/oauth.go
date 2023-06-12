@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v3/pkg/cache"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/oauth"
 	"github.com/cloudreve/Cloudreve/v3/pkg/request"
 	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 )
@@ -128,8 +129,8 @@ func (client *Client) UpdateCredential(ctx context.Context, isSlave bool) error 
 		return client.fetchCredentialFromMaster(ctx)
 	}
 
-	GlobalMutex.Lock(client.Policy.ID)
-	defer GlobalMutex.Unlock(client.Policy.ID)
+	oauth.GlobalMutex.Lock(client.Policy.ID)
+	defer oauth.GlobalMutex.Unlock(client.Policy.ID)
 
 	// 如果已存在凭证
 	if client.Credential != nil && client.Credential.AccessToken != "" {
@@ -175,9 +176,13 @@ func (client *Client) UpdateCredential(ctx context.Context, isSlave bool) error 
 	return nil
 }
 
+func (client *Client) AccessToken() string {
+	return client.Credential.AccessToken
+}
+
 // UpdateCredential 更新凭证，并检查有效期
 func (client *Client) fetchCredentialFromMaster(ctx context.Context) error {
-	res, err := client.ClusterController.GetOneDriveToken(client.Policy.MasterID, client.Policy.ID)
+	res, err := client.ClusterController.GetPolicyOauthToken(client.Policy.MasterID, client.Policy.ID)
 	if err != nil {
 		return err
 	}

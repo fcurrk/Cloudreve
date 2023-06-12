@@ -4,13 +4,13 @@ import (
 	"context"
 	model "github.com/cloudreve/Cloudreve/v3/models"
 	"github.com/cloudreve/Cloudreve/v3/pkg/auth"
+	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/driver"
 	"github.com/cloudreve/Cloudreve/v3/pkg/filesystem/fsctx"
 	"github.com/cloudreve/Cloudreve/v3/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v3/pkg/util"
 	"github.com/jinzhu/gorm"
 	"github.com/stretchr/testify/assert"
 	"io"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -141,17 +141,34 @@ func TestHandler_Thumb(t *testing.T) {
 	asserts.NoError(err)
 	file.Close()
 
+	f := &model.File{
+		SourceName: "TestHandler_Thumb",
+		MetadataSerialized: map[string]string{
+			model.ThumbStatusMetadataKey: model.ThumbStatusExist,
+		},
+	}
+
 	// 正常
 	{
-		thumb, err := handler.Thumb(ctx, "TestHandler_Thumb")
+		thumb, err := handler.Thumb(ctx, f)
 		asserts.NoError(err)
 		asserts.NotNil(thumb.Content)
 	}
 
-	// 不存在
+	// file 不存在
 	{
-		_, err := handler.Thumb(ctx, "not_exist")
+		f.SourceName = "not_exist"
+		_, err := handler.Thumb(ctx, f)
 		asserts.Error(err)
+		asserts.ErrorIs(err, driver.ErrorThumbNotExist)
+	}
+
+	// thumb not exist
+	{
+		f.MetadataSerialized[model.ThumbStatusMetadataKey] = model.ThumbStatusNotExist
+		_, err := handler.Thumb(ctx, f)
+		asserts.Error(err)
+		asserts.ErrorIs(err, driver.ErrorThumbNotExist)
 	}
 }
 
@@ -172,13 +189,10 @@ func TestHandler_Source(t *testing.T) {
 			Name: "test.jpg",
 		}
 		ctx := context.WithValue(ctx, fsctx.FileModelCtx, file)
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		sourceURL, err := handler.Source(ctx, "", *baseURL, 0, false, 0)
+		sourceURL, err := handler.Source(ctx, "", 0, false, 0)
 		asserts.NoError(err)
 		asserts.NotEmpty(sourceURL)
 		asserts.Contains(sourceURL, "sign=")
-		asserts.Contains(sourceURL, "https://cloudreve.org")
 	}
 
 	// 下载
@@ -190,21 +204,16 @@ func TestHandler_Source(t *testing.T) {
 			Name: "test.jpg",
 		}
 		ctx := context.WithValue(ctx, fsctx.FileModelCtx, file)
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		sourceURL, err := handler.Source(ctx, "", *baseURL, 0, true, 0)
+		sourceURL, err := handler.Source(ctx, "", 0, true, 0)
 		asserts.NoError(err)
 		asserts.NotEmpty(sourceURL)
 		asserts.Contains(sourceURL, "sign=")
 		asserts.Contains(sourceURL, "download")
-		asserts.Contains(sourceURL, "https://cloudreve.org")
 	}
 
 	// 无法获取上下文
 	{
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		sourceURL, err := handler.Source(ctx, "", *baseURL, 0, false, 0)
+		sourceURL, err := handler.Source(ctx, "", 0, false, 0)
 		asserts.Error(err)
 		asserts.Empty(sourceURL)
 	}
@@ -219,9 +228,7 @@ func TestHandler_Source(t *testing.T) {
 			Name: "test.jpg",
 		}
 		ctx := context.WithValue(ctx, fsctx.FileModelCtx, file)
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		sourceURL, err := handler.Source(ctx, "", *baseURL, 0, false, 0)
+		sourceURL, err := handler.Source(ctx, "", 0, false, 0)
 		asserts.NoError(err)
 		asserts.NotEmpty(sourceURL)
 		asserts.Contains(sourceURL, "sign=")
@@ -238,9 +245,7 @@ func TestHandler_Source(t *testing.T) {
 			Name: "test.jpg",
 		}
 		ctx := context.WithValue(ctx, fsctx.FileModelCtx, file)
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		sourceURL, err := handler.Source(ctx, "", *baseURL, 0, false, 0)
+		sourceURL, err := handler.Source(ctx, "", 0, false, 0)
 		asserts.Error(err)
 		asserts.Empty(sourceURL)
 	}
@@ -261,19 +266,14 @@ func TestHandler_GetDownloadURL(t *testing.T) {
 			Name: "test.jpg",
 		}
 		ctx := context.WithValue(ctx, fsctx.FileModelCtx, file)
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		downloadURL, err := handler.Source(ctx, "", *baseURL, 10, true, 0)
+		downloadURL, err := handler.Source(ctx, "", 10, true, 0)
 		asserts.NoError(err)
 		asserts.Contains(downloadURL, "sign=")
-		asserts.Contains(downloadURL, "https://cloudreve.org")
 	}
 
 	// 无法获取上下文
 	{
-		baseURL, err := url.Parse("https://cloudreve.org")
-		asserts.NoError(err)
-		downloadURL, err := handler.Source(ctx, "", *baseURL, 10, true, 0)
+		downloadURL, err := handler.Source(ctx, "", 10, true, 0)
 		asserts.Error(err)
 		asserts.Empty(downloadURL)
 	}

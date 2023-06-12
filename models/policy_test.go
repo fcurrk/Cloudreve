@@ -25,7 +25,7 @@ func TestGetPolicyByID(t *testing.T) {
 		asserts.NoError(err)
 		asserts.NoError(mock.ExpectationsWereMet())
 		asserts.Equal("默认存储策略", policy.Name)
-		asserts.Equal("123", policy.OptionsSerialized.OdRedirect)
+		asserts.Equal("123", policy.OptionsSerialized.OauthRedirect)
 
 		rows = sqlmock.NewRows([]string{"name", "type", "options"})
 		mock.ExpectQuery("^SELECT(.+)").WillReturnRows(rows)
@@ -39,7 +39,7 @@ func TestGetPolicyByID(t *testing.T) {
 		policy, err := GetPolicyByID(uint(22))
 		asserts.NoError(err)
 		asserts.Equal("默认存储策略", policy.Name)
-		asserts.Equal("123", policy.OptionsSerialized.OdRedirect)
+		asserts.Equal("123", policy.OptionsSerialized.OauthRedirect)
 
 	}
 
@@ -50,7 +50,7 @@ func TestPolicy_BeforeSave(t *testing.T) {
 
 	testPolicy := Policy{
 		OptionsSerialized: PolicyOption{
-			OdRedirect: "123",
+			OauthRedirect: "123",
 		},
 	}
 	expected, _ := json.Marshal(testPolicy.OptionsSerialized)
@@ -134,6 +134,12 @@ func TestPolicy_GenerateFileName(t *testing.T) {
 		testPolicy.FileNameRule = "123{date}ss{datetime}"
 		asserts.Len(testPolicy.GenerateFileName(1, "123.txt"), 27)
 
+		testPolicy.FileNameRule = "{originname_without_ext}"
+		asserts.Len(testPolicy.GenerateFileName(1, "123.txt"), 3)
+
+		testPolicy.FileNameRule = "{originname_without_ext}_{randomkey8}{ext}"
+		asserts.Len(testPolicy.GenerateFileName(1, "123.txt"), 16)
+
 		// 支持{originname}的策略
 		testPolicy.Type = "local"
 		testPolicy.FileNameRule = "123{originname}"
@@ -212,57 +218,6 @@ func TestPolicy_Props(t *testing.T) {
 	asserts.True(policy.IsUploadPlaceholderWithSize())
 }
 
-func TestPolicy_IsThumbExist(t *testing.T) {
-	asserts := assert.New(t)
-
-	testCases := []struct {
-		name   string
-		expect bool
-		policy string
-	}{
-		{
-			"1.png",
-			false,
-			"unknown",
-		},
-		{
-			"1.png",
-			false,
-			"local",
-		},
-		{
-			"1.png",
-			true,
-			"cos",
-		},
-		{
-			"1",
-			false,
-			"cos",
-		},
-		{
-			"1.txt.png",
-			true,
-			"cos",
-		},
-		{
-			"1.png.txt",
-			false,
-			"cos",
-		},
-		{
-			"1",
-			true,
-			"onedrive",
-		},
-	}
-
-	for _, testCase := range testCases {
-		policy := Policy{Type: testCase.policy}
-		asserts.Equal(testCase.expect, policy.IsThumbExist(testCase.name))
-	}
-}
-
 func TestPolicy_UpdateAccessKeyAndClearCache(t *testing.T) {
 	a := assert.New(t)
 	cache.Set("policy_1331", Policy{}, 3600)
@@ -276,4 +231,39 @@ func TestPolicy_UpdateAccessKeyAndClearCache(t *testing.T) {
 	a.NoError(mock.ExpectationsWereMet())
 	_, ok := cache.Get("policy_1331")
 	a.False(ok)
+}
+
+func TestPolicy_CouldProxyThumb(t *testing.T) {
+	a := assert.New(t)
+	p := &Policy{Type: "local"}
+
+	// local policy
+	{
+		a.False(p.CouldProxyThumb())
+	}
+
+	// feature not enabled
+	{
+		p.Type = "remote"
+		cache.Set("setting_thumb_proxy_enabled", "0", 0)
+		a.False(p.CouldProxyThumb())
+	}
+
+	// list not contain current policy
+	{
+		p.ID = 2
+		cache.Set("setting_thumb_proxy_enabled", "1", 0)
+		cache.Set("setting_thumb_proxy_policy", "[1]", 0)
+		a.False(p.CouldProxyThumb())
+	}
+
+	// enabled
+	{
+		p.ID = 2
+		cache.Set("setting_thumb_proxy_enabled", "1", 0)
+		cache.Set("setting_thumb_proxy_policy", "[2]", 0)
+		a.True(p.CouldProxyThumb())
+	}
+
+	cache.Deletes([]string{"thumb_proxy_enabled", "thumb_proxy_policy"}, "setting_")
 }
