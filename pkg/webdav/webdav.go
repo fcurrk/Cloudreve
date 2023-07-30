@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"path"
 	"strconv"
@@ -241,6 +242,23 @@ func (h *Handler) handleOptions(w http.ResponseWriter, r *http.Request, fs *file
 	return 0, nil
 }
 
+var proxy = &httputil.ReverseProxy{
+	Director: func(request *http.Request) {
+		if target, ok := request.Context().Value(fsctx.WebDAVProxyUrlCtx).(*url.URL); ok {
+			request.URL.Scheme = target.Scheme
+			request.URL.Host = target.Host
+			request.URL.Path = target.Path
+			request.URL.RawPath = target.RawPath
+			request.URL.RawQuery = target.RawQuery
+			request.Host = target.Host
+			request.Header.Del("Authorization")
+		}
+	},
+	ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
+		writer.WriteHeader(http.StatusInternalServerError)
+	},
+}
+
 // OK
 func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request, fs *filesystem.FileSystem) (status int, err error) {
 	defer fs.Recycle()
@@ -279,7 +297,23 @@ func (h *Handler) handleGetHeadPost(w http.ResponseWriter, r *http.Request, fs *
 		return 0, nil
 	}
 
-	http.Redirect(w, r, rs.URL, 301)
+	if application, ok := r.Context().Value(fsctx.WebDAVCtx).(*model.Webdav); ok && application.UseProxy {
+		target, err := url.Parse(rs.URL)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+
+		r = r.Clone(context.WithValue(r.Context(), fsctx.WebDAVProxyUrlCtx, target))
+		// 忽略反向代理在传输错误时报错
+		defer func() {
+			if err := recover(); err != nil && err != http.ErrAbortHandler {
+				panic(err)
+			}
+		}()
+		proxy.ServeHTTP(w, r)
+	} else {
+		http.Redirect(w, r, rs.URL, 301)
+	}
 
 	return 0, nil
 }
@@ -496,7 +530,16 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request, fs *fil
 				return http.StatusBadRequest, errInvalidDepth
 			}
 		}
-		return copyFiles(ctx, fs, target, dst, r.Header.Get("Overwrite") != "F", depth, 0)
+		status, err = copyFiles(ctx, fs, target, dst, r.Header.Get("Overwrite") != "F", depth, 0)
+		if err != nil {
+			return status, err
+		}
+
+		err = updateCopyMoveModtime(r, fs, dst)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return status, nil
 	}
 
 	// windows下，某些情况下（网盘根目录下）Office保存文件时附带的锁token只包含源文件，
@@ -515,7 +558,16 @@ func (h *Handler) handleCopyMove(w http.ResponseWriter, r *http.Request, fs *fil
 			return http.StatusBadRequest, errInvalidDepth
 		}
 	}
-	return moveFiles(ctx, fs, target, dst, r.Header.Get("Overwrite") == "T")
+	status, err = moveFiles(ctx, fs, target, dst, r.Header.Get("Overwrite") == "T")
+	if err != nil {
+		return status, err
+	}
+
+	err = updateCopyMoveModtime(r, fs, dst)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	return status, nil
 }
 
 // OK

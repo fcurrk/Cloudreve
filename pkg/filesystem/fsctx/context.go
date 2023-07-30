@@ -35,4 +35,10 @@ const (
 	CancelFuncCtx
 	// 文件在从机节点中的路径
 	SlaveSrcPath
+	// Webdav目标名称
+	WebdavDstName
+	// WebDAVCtx WebDAV
+	WebDAVCtx
+	// WebDAV反代Url
+	WebDAVProxyUrlCtx
 )
