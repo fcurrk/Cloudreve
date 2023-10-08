@@ -13,7 +13,7 @@ builds:
     binary: cloudreve
 
     ldflags:
-      - -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=3.8.2.1007' -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit={{.ShortCommit}}'
+      - -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.BackendVersion=3.8.3.1008' -X 'github.com/cloudreve/Cloudreve/v3/pkg/conf.LastCommit={{.ShortCommit}}'
 
     goos:
       - linux
